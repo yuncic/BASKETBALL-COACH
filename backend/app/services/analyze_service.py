@@ -217,7 +217,7 @@ def analyze_video_from_path(
     cap.release()
     time = np.asarray(time, float)
     nT = len(time)
-    
+
     # ---------- 시계열 평활화 & 각속도 ----------
     knees_s = smooth(knees)
     hips_s = smooth(hips)
@@ -254,6 +254,67 @@ def analyze_video_from_path(
         release_idx = int(nT * 0.7) if nT > 0 else 0
 
     REL = time[release_idx] if nT > 0 else 0.0
+
+    # ---------- 타이밍 피크 탐색 ----------
+
+    #시계열 기준 이전 동작보다 몇 초 앞인지 설정
+    expected = {
+        "elbow": -0.07,  
+        "shoulder": -0.19,  
+        "hip": -0.29,  
+        "knee": -0.39, 
+    }
+    win_width = {"knee": 0.20, "hip": 0.20, "shoulder": 0.20, "elbow": 0.15}
+
+    def pick_peak_in_window(t, signal, center_time, half_width):
+        if (center_time is None) or (len(t) == 0):
+            return None
+        t0, t1 = center_time - half_width, center_time + half_width
+        mask = (t >= t0) & (t <= t1)
+        if not np.any(mask):
+            return None
+        s = signal.copy().astype(float)
+        s[~mask] = np.nan
+        z = zscore(s)
+        if np.isfinite(z).sum() == 0:
+            return None
+        idx = int(np.nanargmax(z))
+        return idx
+
+    def fallback_peak(signal):
+        z = zscore(signal)
+        return int(np.nanargmax(z)) if np.isfinite(z).sum() > 0 else None
+
+    knee_t = pick_peak_in_window(time, knee_v, REL + expected["knee"], win_width["knee"])
+    hip_t = pick_peak_in_window(time, hip_v, REL + expected["hip"], win_width["hip"])
+    sho_t = pick_peak_in_window(time, sho_v, REL + expected["shoulder"], win_width["shoulder"])
+    elb_t = pick_peak_in_window(time, elb_v, REL + expected["elbow"], win_width["elbow"])
+
+    if knee_t is None:
+        knee_t = fallback_peak(knee_v)
+    if hip_t is None:
+        hip_t = fallback_peak(hip_v)
+    if sho_t is None:
+        sho_t = fallback_peak(sho_v)
+    if elb_t is None:
+        elb_t = fallback_peak(elb_v)
+
+    def gap_time_by_index(idx_a, idx_b, fps_local):
+        if (idx_a is None) or (idx_b is None):
+            return None
+        if idx_a < 0 or idx_b < 0:
+            return None
+        frame_gap = abs(idx_b - idx_a)
+        return frame_gap / max(fps_local, 1e-6)
+
+    # ---------- 타이밍 간격 ----------
+    G_ke = None
+    if (knee_t is not None) and (hip_t is not None):
+        a, b = sorted([knee_t, hip_t])
+        G_ke = gap_time_by_index(a, b, fps)
+
+    G_sa = gap_time_by_index(sho_t, elb_t, fps)
+    G_ar = gap_time_by_index(elb_t, release_idx, fps)
 
 
 def analyze_video_from_path(
