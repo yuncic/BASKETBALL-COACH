@@ -109,6 +109,23 @@ def draw_panel(img, lines, font_path):
         y += int(60 * scale) #줄바꿈
     return np.array(img_pil)
 
+def unit_vec(v):
+    v = np.array(v, dtype=float)
+    n = np.linalg.norm(v)
+    return v / n if n > 1e-8 else np.zeros_like(v)
+
+_pose_model = None
+_det_model = None
+
+def _get_models():
+    """모델을 지연 로드 (첫 호출 시 로드)"""
+    global _pose_model, _det_model
+    if _pose_model is None:
+        _pose_model = YOLO(str(POSE_MODEL_PATH))
+    if _det_model is None:
+        _det_model = YOLO(str(DET_MODEL_PATH))
+    return _pose_model, _det_model
+
 def analyze_video_from_path(
     input_path: str,
     output_path: str,
