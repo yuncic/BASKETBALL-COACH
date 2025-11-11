@@ -472,17 +472,82 @@ def analyze_video_from_path(
     align_mean = np.nanmean([score_arm, score_com])
     eff_score = clamp01_100(0.5 * timing_mean + 0.5 * align_mean)
 
+    # ---------- 패널 텍스트 ----------
+    lines = [
+        f"효율 점수: {eff_score:.1f}%",
+        f"무릎↔허리 동기화: {fmt_sec(G_ke)} ({verdict_sync_ke(G_ke)})",
+        f"어깨→팔꿈치: {fmt_sec(G_sa)} ({verdict_shoulder_elbow(G_sa)})",
+        f"릴리즈 타이밍: {fmt_sec(G_ar)} ({verdict_release(G_ar)})",
+        f"팔과 공의 방향 정렬도: {0.0 if not np.isfinite(score_arm) else score_arm:.1f}점",
+        f"질량중심과 공의 방향 정렬도: {0.0 if not np.isfinite(score_com) else score_com:.1f}점",
+        f"발사각: {rel_ang:.1f}°",
+    ]
+
+    # ---------- Pass2 렌더링 ----------
+    cap = cv2.VideoCapture(input_path)
+    # H.264 컨테이너 호환성 좋게 avc1 시도, 실패 시 mp4v 폴백
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+    if not out.isOpened():
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        pose_out = pose_model(frame)
+        pose = pose_out[0]
+        annotated = pose.plot()
+        annotated = draw_panel(annotated, lines, font_path)
+        out.write(annotated)
+
+    cap.release()
+    out.release()
+
+    if (not os.path.exists(output_path)) or os.path.getsize(output_path) == 0:
+        raise RuntimeError("주석 영상 생성 실패(파일이 비어있음). ffmpeg/코덱 점검 필요.")
+
+    # ---------- 웹 패널용 리포트(영상 안 패널과 동일 정보) ----------
+    report = {
+        "eff_score": round(float(eff_score), 1),
+        "metrics": {
+            "knee_hip": {
+                "gap": fmt_sec((abs(knee_t - hip_t) / fps) if (knee_t is not None and hip_t is not None) else None),
+                "verdict": verdict_sync_ke(G_ke),
+            },
+            "shoulder_elbow": {
+                "gap": fmt_sec(G_sa),
+                "verdict": verdict_shoulder_elbow(G_sa),
+            },
+            "release_timing": {
+                "gap": fmt_sec(G_ar),
+                "verdict": verdict_release(G_ar),
+            },
+        },
+        "alignment": {
+            "arm_ball": 0.0 if not np.isfinite(score_arm) else round(float(score_arm), 1),
+            "com_ball": 0.0 if not np.isfinite(score_com) else round(float(score_com), 1),
+            "release_angle": 0.0 if not np.isfinite(rel_ang) else round(float(rel_ang), 1),
+        },
+        "suggestions": [],
+    }
+
+    # 간단 피드백(원본 흐름 유지)
+    if eff_score < 60:
+        report["suggestions"].append("하체 리듬과 릴리즈 타이밍의 일관성을 높이면 슛 효율이 향상됩니다.")
+    elif eff_score < 80:
+        report["suggestions"].append("팔꿈치와 손목의 타이밍을 조정해 릴리즈를 더 부드럽게 만들어보세요.")
+    else:
+        report["suggestions"].append("좋은 폼입니다! 릴리즈 타이밍만 유지하면 안정적인 슛이 가능합니다.")
+
+    rv = report["metrics"]["release_timing"]["verdict"]
+    if rv == "느림":
+        report["suggestions"].append("릴리즈가 느립니다. 하체 힘 전달 직후 릴리즈 타이밍을 앞당겨보세요.")
+    elif rv == "빠름":
+        report["suggestions"].append("릴리즈가 빠릅니다. 하체-상체 순차 힘 전달 후에 릴리즈하세요.")
+
+    return report
     
 
     
-
-
-def analyze_video_from_path(
-    input_path: str,
-    output_path: str,
-    font_path: str = None,
-    slow_factor: float = None
-):
-    
-
-    pass
