@@ -379,6 +379,101 @@ def analyze_video_from_path(
     score_s = band_score(G_sa, TARGET["G_sa"], TOL["G_sa"])
     score_a = band_score(G_ar, TARGET["G_ar"], TOL["G_ar"])
 
+    # ---------- 벡터 정렬 (팔·공, COM·공) ----------
+    def regress_velocity(points, t, idx_center, pre=6, post=0):
+        """idx_center 이전 구간을 이용한 최소자승 속도 추정(공/COM 공통)."""
+        idxs = [i for i in range(idx_center - pre, idx_center + post + 1)
+                if 0 <= i < len(points) and points[i] is not None]
+        shrink = pre
+        while len(idxs) < 2 and shrink > 1:
+            shrink //= 2
+            idxs = [i for i in range(idx_center - shrink, idx_center + 1)
+                    if 0 <= i < len(points) and points[i] is not None]
+        if len(idxs) < 2:
+            return None
+        xs = np.array([points[i][0] for i in idxs], dtype=float)
+        ys = np.array([points[i][1] for i in idxs], dtype=float)
+        ts = np.array([t[i] for i in idxs], dtype=float)
+        valid = np.isfinite(xs) & np.isfinite(ys) & np.isfinite(ts)
+        if np.sum(valid) < 3:
+            return None
+        xs, ys, ts = xs[valid], ys[valid], ts[valid]
+        A = np.vstack([ts, np.ones_like(ts)]).T
+        ax, _ = np.linalg.lstsq(A, xs, rcond=None)[0]
+        ay, _ = np.linalg.lstsq(A, ys, rcond=None)[0]
+        return np.array([ax, ay], dtype=float)
+
+    def alignment_score(v1, v2):
+        """코사인 유사도 기반 정렬도. 음수(반대방향)는 0 처리."""
+        if v1 is None or v2 is None:
+            return np.nan
+        v1 = unit_vec(v1)
+        v2 = unit_vec(v2)
+        cosv = np.clip(np.dot(v1, v2), -1.0, 1.0)
+        return clamp01_100(100.0 * max(0.0, cosv))
+
+    ball_series = balls.copy()
+    v_ball_img = regress_velocity(ball_series, time, release_idx, pre=6, post=0)
+    v_ball = None if v_ball_img is None else np.array([v_ball_img[0], -v_ball_img[1]], dtype=float)
+
+    kp_rel = kps[release_idx] if (0 <= release_idx < len(kps)) else None
+    if kp_rel is None and len(kps) > 0:
+        kp_rel = kps[max(0, release_idx - 1)]
+
+    v_arm = None
+    if kp_rel is not None:
+        try:
+            sh = kp_rel[R_SHO]
+            wr = kp_rel[R_WRI]
+            v_arm = np.array([wr[0] - sh[0], -(wr[1] - sh[1])], dtype=float)
+        except:
+            v_arm = None
+
+    def com_points_from_kps(kps_list):
+        pts = []
+        for kp in kps_list:
+            if kp is None:
+                pts.append(None)
+            else:
+                try:
+                    hip = kp[R_HIP]
+                    sho = kp[R_SHO]
+                    com = ((hip[0] + sho[0]) / 2.0, (hip[1] + sho[1]) / 2.0)
+                    pts.append(com)
+                except:
+                    pts.append(None)
+        return pts
+
+    com_series = com_points_from_kps(kps)
+    v_com_img = regress_velocity(com_series, time, release_idx, pre=6, post=0)
+    v_com = None if v_com_img is None else np.array([v_com_img[0], -v_com_img[1]], dtype=float)
+
+    score_arm = alignment_score(v_arm, v_ball)
+    score_com = alignment_score(v_com, v_ball)
+
+    def release_angle_horizontal(sh, wr):
+        if (sh is None) or (wr is None):
+            return np.nan
+        dx = wr[0] - sh[0]
+        dy_up = -(wr[1] - sh[1])
+        ang = math.degrees(math.atan2(abs(dy_up), abs(dx)))
+        if not np.isfinite(ang):
+            return np.nan
+        return float(max(0.0, min(90.0, ang)))
+
+    rel_ang = np.nan
+    if kp_rel is not None:
+        try:
+            rel_ang = release_angle_horizontal(kp_rel[R_SHO], kp_rel[R_WRI])
+        except:
+            rel_ang = np.nan
+
+    timing_mean = np.nanmean([score_k, score_s, score_a])
+    align_mean = np.nanmean([score_arm, score_com])
+    eff_score = clamp01_100(0.5 * timing_mean + 0.5 * align_mean)
+
+    
+
     
 
 
