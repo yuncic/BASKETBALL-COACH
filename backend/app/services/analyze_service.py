@@ -95,6 +95,20 @@ def clamp01_100(x):
 def fmt_sec(x):
     return f"{x:.2f}s" if (x is not None and np.isfinite(x)) else "-"
 
+def draw_panel(img, lines, font_path):
+    H, W = img.shape[:2]
+    scale = H / 1920 #영상 높이 1920을 기준으로 scale factor 생성
+    font = ImageFont.truetype(ensure_font(font_path), int(38 * scale))
+    img_pil = Image.fromarray(img)
+    d = ImageDraw.Draw(img_pil)
+    box = (int(40 * scale), int(40 * scale), int(1000 * scale), int((len(lines) + 1) * 60 * scale))
+    d.rectangle(box, fill=(0, 0, 0, 180))
+    y = int(70 * scale)
+    for t in lines:
+        d.text((int(60 * scale), y), t, fill=(255, 255, 255), font=font)
+        y += int(60 * scale) #줄바꿈
+    return np.array(img_pil)
+
 def analyze_video_from_path(
     input_path: str,
     output_path: str,
