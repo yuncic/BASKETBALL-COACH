@@ -217,6 +217,43 @@ def analyze_video_from_path(
     cap.release()
     time = np.asarray(time, float)
     nT = len(time)
+    
+    # ---------- 시계열 평활화 & 각속도 ----------
+    knees_s = smooth(knees)
+    hips_s = smooth(hips)
+    shoulders_s = smooth(shoulders)
+    elbows_s = smooth(elbows)
+    knee_v = derivative(knees_s, time)
+    hip_v = derivative(hips_s, time)
+    sho_v = derivative(shoulders_s, time)
+    elb_v = derivative(elbows_s, time)
+
+    # ---------- 릴리즈 검출 (손목 제외 / 공 궤도 기반) ----------
+    ball_y = np.array([b[1] if b is not None else np.nan for b in balls], dtype=float)
+    ball_y_s = smooth(ball_y)
+    v_ball_y = derivative(ball_y_s, time)
+
+    release_idx = None
+    for i in range(1, nT):
+        if (balls[i - 1] is not None) and (balls[i] is None):
+            release_idx = i
+            break
+
+    if release_idx is None:
+        signs = np.sign(v_ball_y)
+        change_pts = np.where(np.diff(signs) > 0)[0]
+        if len(change_pts) > 0:
+            release_idx = int(change_pts[0] + 1)
+
+    if release_idx is None:
+        dist_speed = np.gradient(np.abs(v_ball_y))
+        if np.nanmax(dist_speed) > np.nanmean(dist_speed) * 3:
+            release_idx = int(np.nanargmax(dist_speed))
+
+    if release_idx is None:
+        release_idx = int(nT * 0.7) if nT > 0 else 0
+
+    REL = time[release_idx] if nT > 0 else 0.0
 
 
 def analyze_video_from_path(
