@@ -126,6 +126,99 @@ def _get_models():
         _det_model = YOLO(str(DET_MODEL_PATH))
     return _pose_model, _det_model
 
+# COCO right side indices
+R_SHO, R_ELB, R_WRI, R_HIP, R_KNE, R_ANK = 6, 8, 10, 12, 14, 16
+
+def analyze_video_from_path(
+    input_path: str,
+    output_path: str,
+    font_path: str = DEFAULT_FONT,
+    slow_factor: float = SLOW_FACTOR
+):
+    """
+    '원본 분석 로직'을 그대로 보존한 형태로 함수화.
+    - input_path: 입력 영상 경로(.mp4, .mov 상관없음)
+    - output_path: 결과 주석 영상 저장 경로(mp4)
+    - font_path: 패널 폰트 경로
+    - slow_factor: 재생 속도 배수(0.5면 절반 속도)
+
+    반환: report(dict) - 웹에서 오른쪽 패널에 텍스트로 표시
+    """
+    pose_model, det_model = _get_models()
+
+    # ---------- Pass1: 포즈 & 공 궤적 ----------
+    cap = cv2.VideoCapture(input_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"영상 열기 실패: {input_path}")
+
+    fps_reported = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    fps = fps_reported if (10.0 <= fps_reported <= 240.0) else 30.0
+    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    time = []  # 초 단위
+    knees = []
+    hips = []
+    shoulders = []
+    elbows = []
+    wrists = []
+    balls = []
+    kps = []
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+        time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
+
+        pose_out = pose_model(frame)
+        pose = pose_out[0]
+        kp = None
+        if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
+            kp = pose.keypoints.xy[0].cpu().numpy()
+
+        det = det_model(frame)[0]
+        bxy = None
+        if det and det.boxes is not None and len(det.boxes) > 0:
+            best_conf = -1.0
+            for xyxy, c, conf in zip(det.boxes.xyxy, det.boxes.cls, det.boxes.conf):
+                try:
+                    name = det_model.names[int(c)].lower()
+                except:
+                    name = ""
+                if ("ball" in name) and float(conf) >= CONF_BALL:
+                    x1, y1, x2, y2 = xyxy.cpu().numpy()
+                    if float(conf) > best_conf:
+                        best_conf = float(conf)
+                        bxy = ((x1 + x2) / 2, (y1 + y2) / 2)
+
+        if kp is None:
+            knees.append(np.nan)
+            hips.append(np.nan)
+            shoulders.append(np.nan)
+            elbows.append(np.nan)
+            wrists.append(None)
+            balls.append(bxy)
+            kps.append(None)
+            continue
+
+        an, k, h = kp[R_ANK], kp[R_KNE], kp[R_HIP]
+        sh, el, wr = kp[R_SHO], kp[R_ELB], kp[R_WRI]
+
+        knees.append(angle_abc(an, k, h))  # 무릎 폄 증가
+        hips.append(angle_abc(k, h, sh))  # 허리 폄 근사
+        shoulders.append(angle_abc(h, sh, el))  # 어깨 굴곡 근사
+        elbows.append(angle_abc(sh, el, wr))  # 팔꿈치 폄 증가
+        wrists.append(tuple(wr) if wr is not None else None)
+        balls.append(bxy)
+        kps.append(kp)
+
+    cap.release()
+    time = np.asarray(time, float)
+    nT = len(time)
+
+
 def analyze_video_from_path(
     input_path: str,
     output_path: str,
