@@ -316,6 +316,71 @@ def analyze_video_from_path(
     G_sa = gap_time_by_index(sho_t, elb_t, fps)
     G_ar = gap_time_by_index(elb_t, release_idx, fps)
 
+    # ---------- 점수/판정 ----------
+    TARGET = {"G_ke": 0.0, "G_sa": 0.12, "G_ar": 0.07}
+    TOL = {"G_ke": 0.05, "G_sa": 0.06, "G_ar": 0.05}
+
+    def band_score(x, target, tol, max_penalty=60.0):
+        if x is None or not np.isfinite(x):
+            return 55.0
+        diff = abs(x - target)
+        if diff <= tol:
+            return 100.0
+        overshoot = diff - tol
+        penalty = (overshoot / 0.30) * max_penalty
+        return clamp01_100(100.0 - penalty)
+
+    def verdict_sync_ke(x):
+        if x is None or not np.isfinite(x):
+            return "데이터 부족"
+        diff = abs(x - 0.0)
+        if 0 <= diff <= 0.03:
+            return "완벽 동기화"
+        elif 0.03 < diff <= 0.05:
+            return "양호"
+        elif 0.05 < diff <= 0.10:
+            return "보통"
+        elif 0.10 < diff <= 0.13:
+            return "불량"
+        elif 0.13 < diff <= 0.15:
+            return "심각 불일치"
+        else:
+            return "판정 불가"
+
+    def verdict_shoulder_elbow(x):
+        if x is None or not np.isfinite(x):
+            return "데이터 부족"
+        if 0.00 < x < 0.20:
+            return "빠름"
+        elif 0.20 <= x <= 0.30:
+            return "적절"
+        elif 0.30 < x <= 0.340:
+            return "느림"
+        elif x > 0.50:
+            return "매우 느림"
+        else:
+            return "판정 불가"
+
+    def verdict_release(x):
+        if x is None or not np.isfinite(x):
+            return "데이터 부족"
+        if 0.00 < x < 0.10:
+            return "빠름"
+        elif 0.10 <= x <= 0.20:
+            return "적절"
+        elif 0.20 < x <= 0.30:
+            return "느림"
+        elif x > 0.30:
+            return "매우 느림"
+        else:
+            return "판정 불가"
+
+    score_k = band_score(G_ke, TARGET["G_ke"], TOL["G_ke"])
+    score_s = band_score(G_sa, TARGET["G_sa"], TOL["G_sa"])
+    score_a = band_score(G_ar, TARGET["G_ar"], TOL["G_ar"])
+
+    
+
 
 def analyze_video_from_path(
     input_path: str,
