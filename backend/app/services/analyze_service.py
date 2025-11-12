@@ -28,15 +28,71 @@ try:
     except ImportError:
         pass
     
-    # ultralytics의 모든 Model 클래스 찾기
+    # ultralytics의 모든 모듈 클래스들을 미리 추가 (에러 방지)
     try:
-        import ultralytics.nn.tasks as tasks_module
-        for name in dir(tasks_module):
-            if 'Model' in name and not name.startswith('_'):
+        # conv 모듈
+        from ultralytics.nn.modules.conv import Conv
+        safe_globals_list.append(Conv)
+    except ImportError:
+        pass
+    
+    try:
+        # block 모듈의 주요 클래스들
+        from ultralytics.nn.modules import block
+        for name in ['C1', 'C2', 'C3', 'C2f', 'SPF', 'SPPF', 'Bottleneck', 'BottleneckCSP', 'C3x', 'RepC3']:
+            try:
+                cls = getattr(block, name, None)
+                if cls and isinstance(cls, type):
+                    safe_globals_list.append(cls)
+            except:
+                pass
+    except ImportError:
+        pass
+    
+    try:
+        # head 모듈
+        from ultralytics.nn.modules import head
+        for name in dir(head):
+            if not name.startswith('_'):
                 try:
-                    cls = getattr(tasks_module, name)
+                    cls = getattr(head, name)
                     if isinstance(cls, type) and issubclass(cls, nn.Module):
                         safe_globals_list.append(cls)
+                except:
+                    pass
+    except ImportError:
+        pass
+    
+    try:
+        # transformer 모듈
+        from ultralytics.nn.modules import transformer
+        for name in dir(transformer):
+            if not name.startswith('_'):
+                try:
+                    cls = getattr(transformer, name)
+                    if isinstance(cls, type) and issubclass(cls, nn.Module):
+                        safe_globals_list.append(cls)
+                except:
+                    pass
+    except ImportError:
+        pass
+    
+    # ultralytics.nn의 모든 클래스를 포괄적으로 추가
+    try:
+        import ultralytics.nn as ultralytics_nn
+        for module_name in dir(ultralytics_nn):
+            if not module_name.startswith('_'):
+                try:
+                    module = getattr(ultralytics_nn, module_name)
+                    if hasattr(module, '__file__'):  # 모듈인지 확인
+                        for name in dir(module):
+                            if not name.startswith('_'):
+                                try:
+                                    cls = getattr(module, name)
+                                    if isinstance(cls, type) and issubclass(cls, (nn.Module,)):
+                                        safe_globals_list.append(cls)
+                                except:
+                                    pass
                 except:
                     pass
     except:
