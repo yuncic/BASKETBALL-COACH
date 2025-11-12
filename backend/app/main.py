@@ -1,22 +1,10 @@
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+
 from app.routes import analyze
-
-import os
-from ultralytics import YOLO
-
-def ensure_model(model_name, url):
-    if not os.path.exists(model_name):
-        print(f"📦 모델 {model_name} 이(가) 없습니다. 자동 다운로드 중...")
-        os.system(f"wget -O {model_name} {url}")
-        print("✅ 다운로드 완료!")
-
-# YOLO 모델 자동 확보
-ensure_model("yolov8x.pt", "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8x.pt")
-ensure_model("yolov8n-pose.pt", "https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n-pose.pt")
-
-pose_model = YOLO("yolov8n-pose.pt")
-det_model = YOLO("yolov8x.pt")
 
 app = FastAPI(title="Shooting Analyzer API", version="1.0.0")
 
@@ -34,11 +22,50 @@ app.add_middleware(
 app.include_router(analyze.router)
 
 
-@app.get("/")
-async def root():
-    return {"message": "Shooting Analyzer API"}
-
-
-@app.get("/status")
+@app.get("/health")
 async def health_check():
-    return {"status": "I'm Working!"}
+    return {"status": "healthy"}
+
+
+# ----- 정적 프론트엔드 제공 -----
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_frontend_candidates = [
+    PROJECT_ROOT / "frontend",                         # 최상위 frontend/
+    Path(__file__).resolve().parent.parent / "frontend",  # backend/frontend/ (대체 경로)
+]
+
+FRONTEND_DIR = next((path for path in _frontend_candidates if path.exists()), None)
+INDEX_FILE = FRONTEND_DIR / "index.html" if FRONTEND_DIR else None
+
+
+def _frontend_ready() -> bool:
+    return FRONTEND_DIR is not None and INDEX_FILE.exists()
+
+
+if _frontend_ready():
+
+    @app.get("/", include_in_schema=False)
+    async def serve_frontend_root():
+        return FileResponse(INDEX_FILE)
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    async def serve_frontend_assets(full_path: str):
+        # API 경로는 제외
+        if full_path.startswith("api/"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not found")
+        
+        target_path = FRONTEND_DIR / full_path
+        if target_path.is_file() and target_path.exists():
+            return FileResponse(target_path)
+        # 파일이 없으면 index.html 반환 (SPA 라우팅 지원)
+        return FileResponse(INDEX_FILE)
+
+else:
+
+    @app.get("/", include_in_schema=False)
+    async def frontend_missing():
+        return {
+            "message": "Shooting Analyzer API",
+            "warning": "frontend 디렉토리를 찾을 수 없습니다. README를 참고해 프론트엔드를 준비하세요.",
+        }
