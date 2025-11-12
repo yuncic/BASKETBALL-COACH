@@ -43,7 +43,8 @@ try:
         pass
     
     # 모든 클래스를 한 번에 추가
-    torch.serialization.add_safe_globals(safe_globals_list)
+    if safe_globals_list:
+        torch.serialization.add_safe_globals(safe_globals_list)
 except Exception as e:
     # 오류가 발생해도 계속 진행 (로컬 환경에서는 필요 없을 수 있음)
     print(f"Warning: Failed to add safe globals: {e}")
