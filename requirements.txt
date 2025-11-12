@@ -1,6 +1,6 @@
 # --- 기본 빌드 도구 (Render) ---
 --only-binary=:all:
-pillow==10.3.0
+pillow==10.4.0
 opencv-python-headless==4.10.0.84
 pip>=23.2.1
 setuptools>=65.5.1
