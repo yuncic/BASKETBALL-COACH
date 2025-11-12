@@ -8,19 +8,46 @@ from ultralytics import YOLO
 import torch
 
 # PyTorch 보안 정책: YOLO 모델 로드를 위한 허용 목록 추가
+# PyTorch 2.1+ 버전의 weights_only 정책으로 인해 필요한 모든 클래스를 허용 목록에 추가
 try:
-    from ultralytics.nn.tasks import PoseModel, DetectionModel
-    torch.serialization.add_safe_globals([PoseModel, DetectionModel])
-except (ImportError, AttributeError):
-    # ultralytics 버전에 따라 클래스 이름이 다를 수 있음
+    # PyTorch 기본 모듈들
+    import torch.nn as nn
+    import torch.nn.modules.container as container
+    safe_globals_list = [
+        nn.Module,
+        nn.Sequential,
+        container.Sequential,
+        container.ModuleList,
+        container.ModuleDict,
+    ]
+    
+    # ultralytics 모델 클래스들
+    try:
+        from ultralytics.nn.tasks import PoseModel, DetectionModel
+        safe_globals_list.extend([PoseModel, DetectionModel])
+    except ImportError:
+        pass
+    
+    # ultralytics의 모든 Model 클래스 찾기
     try:
         import ultralytics.nn.tasks as tasks_module
-        safe_classes = [getattr(tasks_module, name) for name in dir(tasks_module) 
-                       if 'Model' in name and not name.startswith('_')]
-        if safe_classes:
-            torch.serialization.add_safe_globals(safe_classes)
+        for name in dir(tasks_module):
+            if 'Model' in name and not name.startswith('_'):
+                try:
+                    cls = getattr(tasks_module, name)
+                    if isinstance(cls, type) and issubclass(cls, nn.Module):
+                        safe_globals_list.append(cls)
+                except:
+                    pass
     except:
         pass
+    
+    # 모든 클래스를 한 번에 추가
+    torch.serialization.add_safe_globals(safe_globals_list)
+except Exception as e:
+    # 오류가 발생해도 계속 진행 (로컬 환경에서는 필요 없을 수 있음)
+    print(f"Warning: Failed to add safe globals: {e}")
+    pass
 
 SLOW_FACTOR = 0.5
 CONF_BALL = 0.20
