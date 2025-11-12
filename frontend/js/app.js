@@ -1,4 +1,4 @@
-import { AppController } from './controllers/AppController.js';
+import { AppController } from './controller/AppController.js';
 
 // DOMContentLoaded 이벤트 대기
 document.addEventListener('DOMContentLoaded', () => {

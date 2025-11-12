@@ -31,8 +31,11 @@ export class UploadView {
         });
 
         this.analyzeButton.addEventListener('click', () => {
+            console.log('버튼 클릭 이벤트 발생, 콜백:', this.analyzeClickCallback);
             if (this.analyzeClickCallback) {
                 this.analyzeClickCallback();
+            } else {
+                console.error('analyzeClickCallback이 설정되지 않았습니다!');
             }
         });
     }
