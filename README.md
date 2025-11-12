@@ -77,6 +77,8 @@
 
 * pathlib: 운영체제별 경로 차이(슬래시 방향 등)를 신경 쓰지 않고 안전하게 파일 위치를 찾기 위한 도구
 
+* pydantic : analyze_video_from_path() 함수가 반환한 report 딕셔너리를 검증
+
 ### 영상 분석 모델
 
 * OpenCV: 영상 프레임 처리, 주석 영상 출력
@@ -91,6 +93,7 @@
 선택 이유: OpenCV만으로는 텍스트 렌더링이 번거로워 PIL(Python Image Library)를 보조로 사용
 
 ### Frontend
+
 * JavaScript: MVC 구조, TDD 기반 기능 구현
 * HTML/CSS: UI 구성, 레이아웃
 * Jest: 프론트 테스트
