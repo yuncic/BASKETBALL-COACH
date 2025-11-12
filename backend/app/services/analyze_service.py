@@ -5,6 +5,22 @@ import numpy as np
 from pathlib import Path
 from PIL import ImageFont, ImageDraw, Image
 from ultralytics import YOLO
+import torch
+
+# PyTorch 보안 정책: YOLO 모델 로드를 위한 허용 목록 추가
+try:
+    from ultralytics.nn.tasks import PoseModel, DetectionModel
+    torch.serialization.add_safe_globals([PoseModel, DetectionModel])
+except (ImportError, AttributeError):
+    # ultralytics 버전에 따라 클래스 이름이 다를 수 있음
+    try:
+        import ultralytics.nn.tasks as tasks_module
+        safe_classes = [getattr(tasks_module, name) for name in dir(tasks_module) 
+                       if 'Model' in name and not name.startswith('_')]
+        if safe_classes:
+            torch.serialization.add_safe_globals(safe_classes)
+    except:
+        pass
 
 SLOW_FACTOR = 0.5
 CONF_BALL = 0.20
