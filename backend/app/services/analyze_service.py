@@ -10,16 +10,97 @@ import torch
 # PyTorch 보안 정책: YOLO 모델 로드를 위한 허용 목록 추가
 # PyTorch 2.1+ 버전의 weights_only 정책으로 인해 필요한 모든 클래스를 허용 목록에 추가
 try:
-    # PyTorch 기본 모듈들
+    # PyTorch 기본 모듈들 - 모든 기본 클래스를 포괄적으로 추가
     import torch.nn as nn
     import torch.nn.modules.container as container
+    import torch.nn.modules.conv as conv_module
+    import torch.nn.modules.batchnorm as batchnorm_module
+    import torch.nn.modules.activation as activation_module
+    import torch.nn.modules.pooling as pooling_module
+    import torch.nn.modules.linear as linear_module
+    import torch.nn.modules.dropout as dropout_module
+    import torch.nn.modules.normalization as normalization_module
+    
+    # PyTorch 기본 모듈 클래스들
     safe_globals_list = [
         nn.Module,
         nn.Sequential,
         container.Sequential,
         container.ModuleList,
         container.ModuleDict,
+        # conv 모듈 - 에러 메시지에서 제안한 정확한 경로로도 추가
+        conv_module.Conv1d,
+        conv_module.Conv2d,  # torch.nn.modules.conv.Conv2d와 동일
+        torch.nn.modules.conv.Conv2d,  # 정확한 경로로 명시적 추가
+        conv_module.Conv3d,
+        conv_module.ConvTranspose1d,
+        conv_module.ConvTranspose2d,
+        conv_module.ConvTranspose3d,
+        # batchnorm 모듈
+        batchnorm_module.BatchNorm1d,
+        batchnorm_module.BatchNorm2d,
+        batchnorm_module.BatchNorm3d,
+        # activation 모듈
+        activation_module.ReLU,
+        activation_module.Sigmoid,
+        activation_module.Tanh,
+        activation_module.LeakyReLU,
+        activation_module.SiLU,
+        # pooling 모듈
+        pooling_module.MaxPool2d,
+        pooling_module.AvgPool2d,
+        pooling_module.AdaptiveAvgPool2d,
+        pooling_module.AdaptiveMaxPool2d,
+        # linear 모듈
+        linear_module.Linear,
+        # dropout 모듈
+        dropout_module.Dropout,
+        dropout_module.Dropout2d,
+        # normalization 모듈
+        normalization_module.LayerNorm,
+        normalization_module.GroupNorm,
     ]
+    
+    # PyTorch의 모든 기본 모듈 클래스를 동적으로 추가
+    try:
+        import torch.nn.modules as modules_package
+        for module_name in dir(modules_package):
+            if not module_name.startswith('_'):
+                try:
+                    module = getattr(modules_package, module_name)
+                    if hasattr(module, '__file__'):  # 모듈인지 확인
+                        for name in dir(module):
+                            if not name.startswith('_') and name[0].isupper():  # 클래스만 (대문자로 시작)
+                                try:
+                                    cls = getattr(module, name)
+                                    if isinstance(cls, type):
+                                        # nn.Module을 상속하는지 확인 (에러 발생 시 제외)
+                                        try:
+                                            if issubclass(cls, nn.Module):
+                                                safe_globals_list.append(cls)
+                                        except:
+                                            # 상속 확인 실패해도 추가 (일부 클래스는 확인 불가)
+                                            safe_globals_list.append(cls)
+                                except:
+                                    pass
+                except:
+                    pass
+    except:
+        pass
+    
+    # torch 자체의 모든 클래스도 추가 (더 포괄적으로)
+    try:
+        import torch
+        for name in dir(torch):
+            if not name.startswith('_') and name[0].isupper():
+                try:
+                    obj = getattr(torch, name)
+                    if isinstance(obj, type):
+                        safe_globals_list.append(obj)
+                except:
+                    pass
+    except:
+        pass
     
     # ultralytics 모델 클래스들
     try:
@@ -98,9 +179,17 @@ try:
     except:
         pass
     
-    # 모든 클래스를 한 번에 추가
+    # 중복 제거 및 모든 클래스를 한 번에 추가
     if safe_globals_list:
-        torch.serialization.add_safe_globals(safe_globals_list)
+        # 중복 제거 (같은 클래스를 여러 번 추가하는 것 방지)
+        seen = set()
+        unique_globals = []
+        for cls in safe_globals_list:
+            if cls not in seen:
+                seen.add(cls)
+                unique_globals.append(cls)
+        torch.serialization.add_safe_globals(unique_globals)
+        print(f"Added {len(unique_globals)} safe globals for PyTorch model loading")
 except Exception as e:
     # 오류가 발생해도 계속 진행 (로컬 환경에서는 필요 없을 수 있음)
     print(f"Warning: Failed to add safe globals: {e}")
@@ -221,6 +310,17 @@ def _get_models():
     """모델을 지연 로드 (첫 호출 시 로드)"""
     global _pose_model, _det_model
     if _pose_model is None:
+        # 모델 로드 전에 safe_globals가 확실히 설정되었는지 확인
+        try:
+            import torch
+            # Conv2d가 확실히 추가되었는지 확인하고 없으면 추가
+            from torch.nn.modules.conv import Conv2d
+            try:
+                torch.serialization.add_safe_globals([Conv2d])
+            except:
+                pass  # 이미 추가되어 있을 수 있음
+        except:
+            pass
         _pose_model = YOLO(str(POSE_MODEL_PATH))
     if _det_model is None:
         _det_model = YOLO(str(DET_MODEL_PATH))
