@@ -1,7 +1,5 @@
 # --- 기본 빌드 도구 (Render) ---
---only-binary=:all:
 pillow==10.4.0
-opencv-python-headless==4.10.0.84
 pip>=23.2.1
 setuptools>=65.5.1
 wheel>=0.38.4
@@ -9,6 +7,6 @@ wheel>=0.38.4
 # --- 앱 패키지 ---
 fastapi==0.111.0
 uvicorn[standard]==0.30.1
-opencv-python-headless==4.9.0.80
+opencv-python-headless==4.10.0.84
 numpy==1.26.4
 ultralytics==8.1.0
