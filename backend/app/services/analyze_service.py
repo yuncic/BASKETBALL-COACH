@@ -29,6 +29,9 @@ try:
         
         # Ultralytics 모듈 클래스들 - 동적으로 추가
         safe_globals_list = [
+            # Python 내장 함수들 (PyTorch 모델 로드에 필요)
+            getattr,
+            setattr,
             # PyTorch 기본
             nn.Module,
             nn.Sequential,
