@@ -1,5 +1,6 @@
 import os
 import math
+import gc
 # OpenCV headless 모드 설정 (GUI 라이브러리 불필요)
 os.environ.setdefault('OPENCV_DISABLE_OPENCL', '1')
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
@@ -9,8 +10,14 @@ from pathlib import Path
 from PIL import ImageFont, ImageDraw, Image
 
 # PyTorch 2.6+ weights_only 문제 해결: torch.load를 패치
+# 메모리 최적화 설정
 try:
     import torch
+    # 메모리 효율적인 설정
+    torch.set_num_threads(1)  # CPU 스레드 제한
+    if hasattr(torch, 'set_num_interop_threads'):
+        torch.set_num_interop_threads(1)
+    
     _original_torch_load = torch.load
     def _patched_torch_load(*args, **kwargs):
         # weights_only가 명시되지 않았거나 True인 경우 False로 변경
@@ -180,7 +187,8 @@ DEFAULT_FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MODEL_DIR = BASE_DIR
 POSE_MODEL_PATH = MODEL_DIR / "yolov8n-pose.pt"
-DET_MODEL_PATH = MODEL_DIR / "yolov8x.pt"
+# 메모리 절약: yolov8x -> yolov8n (공 감지에는 충분함)
+DET_MODEL_PATH = MODEL_DIR / "yolov8n.pt"
 
 def ensure_font(path):
     try:
@@ -354,6 +362,12 @@ def _get_models():
         except Exception as e:
             print(f"⚠️ safe_globals 추가 실패: {e}")
         _pose_model = YOLO(str(POSE_MODEL_PATH))
+        # 메모리 최적화: 모델을 eval 모드로 설정하고 gradient 비활성화
+        if hasattr(_pose_model, 'model'):
+            _pose_model.model.eval()
+            for param in _pose_model.model.parameters():
+                param.requires_grad = False
+        gc.collect()
     
     if _det_model is None:
         # detection 모델 로드 직전에 모든 ultralytics 클래스를 확실히 추가
@@ -397,6 +411,12 @@ def _get_models():
         except Exception as e:
             print(f"⚠️ safe_globals 추가 실패: {e}")
         _det_model = YOLO(str(DET_MODEL_PATH))
+        # 메모리 최적화: 모델을 eval 모드로 설정하고 gradient 비활성화
+        if hasattr(_det_model, 'model'):
+            _det_model.model.eval()
+            for param in _det_model.model.parameters():
+                param.requires_grad = False
+        gc.collect()
     return _pose_model, _det_model
 
 # COCO right side indices
@@ -445,13 +465,17 @@ def analyze_video_from_path(
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
 
-        pose_out = pose_model(frame)
+        # 메모리 효율적인 추론 (imgsz 제한)
+        pose_out = pose_model(frame, imgsz=640, verbose=False)
         pose = pose_out[0]
         kp = None
         if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
             kp = pose.keypoints.xy[0].cpu().numpy()
+        # 메모리 정리
+        del pose_out
+        gc.collect()
 
-        det = det_model(frame)[0]
+        det = det_model(frame, imgsz=640, verbose=False)[0]
         bxy = None
         if det and det.boxes is not None and len(det.boxes) > 0:
             best_conf = -1.0
@@ -465,6 +489,9 @@ def analyze_video_from_path(
                     if float(conf) > best_conf:
                         best_conf = float(conf)
                         bxy = ((x1 + x2) / 2, (y1 + y2) / 2)
+        # 메모리 정리
+        del det
+        gc.collect()
 
         if kp is None:
             knees.append(np.nan)
@@ -769,14 +796,19 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
-        pose_out = pose_model(frame)
+        # 메모리 효율적인 추론
+        pose_out = pose_model(frame, imgsz=640, verbose=False)
         pose = pose_out[0]
         annotated = pose.plot()
         annotated = draw_panel(annotated, lines, font_path)
         out.write(annotated)
+        # 메모리 정리
+        del pose_out, pose, annotated
+        gc.collect()
 
     cap.release()
     out.release()
+    gc.collect()  # 최종 정리
 
     if (not os.path.exists(output_path)) or os.path.getsize(output_path) == 0:
         raise RuntimeError("주석 영상 생성 실패(파일이 비어있음). ffmpeg/코덱 점검 필요.")
