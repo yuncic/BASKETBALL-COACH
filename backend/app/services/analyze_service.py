@@ -55,6 +55,12 @@ try:
         try:
             # ultralytics.nn.modules 모듈 자체의 클래스들 (예: ultralytics.nn.modules.Conv)
             import ultralytics.nn.modules as ultralytics_modules
+            # Conv 클래스를 명시적으로 추가
+            if hasattr(ultralytics_modules, 'Conv'):
+                safe_globals_list.append(ultralytics_modules.Conv)
+            if hasattr(ultralytics_modules, 'Concat'):
+                safe_globals_list.append(ultralytics_modules.Concat)
+            # 나머지 클래스들도 동적으로 추가
             for name in dir(ultralytics_modules):
                 if not name.startswith('_') and name[0].isupper():
                     try:
@@ -63,7 +69,8 @@ try:
                             safe_globals_list.append(obj)
                     except:
                         pass
-        except:
+        except Exception as e:
+            print(f"Warning: Failed to add ultralytics.nn.modules classes: {e}")
             pass
         
         try:
@@ -243,13 +250,16 @@ def _get_models():
             except:
                 pass
             try:
-                # ultralytics.nn.modules.Conv (직접 경로)
+                # ultralytics.nn.modules.Conv (직접 경로) - 명시적으로 추가
                 import ultralytics.nn.modules as ultralytics_modules
                 if hasattr(ultralytics_modules, 'Conv'):
-                    additional_classes.append(getattr(ultralytics_modules, 'Conv'))
+                    additional_classes.append(ultralytics_modules.Conv)
+                    print(f"✅ Added ultralytics.nn.modules.Conv")
                 if hasattr(ultralytics_modules, 'Concat'):
-                    additional_classes.append(getattr(ultralytics_modules, 'Concat'))
-            except:
+                    additional_classes.append(ultralytics_modules.Concat)
+                    print(f"✅ Added ultralytics.nn.modules.Concat")
+            except Exception as e:
+                print(f"Warning: Failed to add ultralytics.nn.modules classes: {e}")
                 pass
             try:
                 # ultralytics.nn.modules.conv.Conv (서브모듈 경로)
