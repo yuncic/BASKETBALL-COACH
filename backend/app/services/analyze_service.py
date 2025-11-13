@@ -57,11 +57,13 @@ try:
             import ultralytics.nn.modules as ultralytics_modules
             # Conv와 Concat을 먼저 명시적으로 추가 (가장 중요!)
             if hasattr(ultralytics_modules, 'Conv'):
-                safe_globals_list.append(ultralytics_modules.Conv)
-                print(f"✅ [초기화] Added ultralytics.nn.modules.Conv")
+                conv_obj = ultralytics_modules.Conv
+                safe_globals_list.append(conv_obj)
+                print(f"✅ [초기화] Added ultralytics.nn.modules.Conv (id: {id(conv_obj)})")
             if hasattr(ultralytics_modules, 'Concat'):
-                safe_globals_list.append(ultralytics_modules.Concat)
-                print(f"✅ [초기화] Added ultralytics.nn.modules.Concat")
+                concat_obj = ultralytics_modules.Concat
+                safe_globals_list.append(concat_obj)
+                print(f"✅ [초기화] Added ultralytics.nn.modules.Concat (id: {id(concat_obj)})")
             # 나머지 클래스들도 동적으로 추가
             for name in dir(ultralytics_modules):
                 if not name.startswith('_') and name[0].isupper():
@@ -290,10 +292,42 @@ def _get_models():
     
     if _pose_model is None:
         print("🔄 Loading pose model...")
+        # 모델 로드 직전에 Conv를 다시 한 번 확실히 추가
+        try:
+            import torch
+            import sys
+            if hasattr(torch.serialization, 'add_safe_globals'):
+                # sys.modules를 통해 실제 모듈 객체 가져오기
+                if 'ultralytics.nn.modules' in sys.modules:
+                    ultralytics_modules = sys.modules['ultralytics.nn.modules']
+                    if hasattr(ultralytics_modules, 'Conv'):
+                        torch.serialization.add_safe_globals([ultralytics_modules.Conv])
+                        print(f"✅ [모델 로드 직전] Added ultralytics.nn.modules.Conv from sys.modules")
+                    if hasattr(ultralytics_modules, 'Concat'):
+                        torch.serialization.add_safe_globals([ultralytics_modules.Concat])
+                        print(f"✅ [모델 로드 직전] Added ultralytics.nn.modules.Concat from sys.modules")
+        except Exception as e:
+            print(f"Warning: Failed to add Conv before pose model load: {e}")
         _pose_model = YOLO(str(POSE_MODEL_PATH))
         print("✅ Pose model loaded")
     if _det_model is None:
         print("🔄 Loading detection model...")
+        # detection 모델 로드 직전에 Conv를 다시 한 번 확실히 추가
+        try:
+            import torch
+            import sys
+            if hasattr(torch.serialization, 'add_safe_globals'):
+                # sys.modules를 통해 실제 모듈 객체 가져오기
+                if 'ultralytics.nn.modules' in sys.modules:
+                    ultralytics_modules = sys.modules['ultralytics.nn.modules']
+                    if hasattr(ultralytics_modules, 'Conv'):
+                        torch.serialization.add_safe_globals([ultralytics_modules.Conv])
+                        print(f"✅ [detection 모델 로드 직전] Added ultralytics.nn.modules.Conv from sys.modules")
+                    if hasattr(ultralytics_modules, 'Concat'):
+                        torch.serialization.add_safe_globals([ultralytics_modules.Concat])
+                        print(f"✅ [detection 모델 로드 직전] Added ultralytics.nn.modules.Concat from sys.modules")
+        except Exception as e:
+            print(f"Warning: Failed to add Conv before detection model load: {e}")
         _det_model = YOLO(str(DET_MODEL_PATH))
         print("✅ Detection model loaded")
     return _pose_model, _det_model
