@@ -270,10 +270,36 @@ def fmt_sec(x):
     return f"{x:.2f}s" if (x is not None and np.isfinite(x)) else "-"
 
 def draw_panel(img, lines, font_path):
-    # 예전 코드와 동일: 간단한 폰트 로드
+    # Docker 컨테이너에서도 작동하도록 폰트 폴백 처리
     H, W = img.shape[:2]
     scale = H / 1920
-    font = ImageFont.truetype(ensure_font(font_path), int(38 * scale))
+    font_size = int(38 * scale)
+    
+    # 폰트 로드 시도 (여러 경로 시도)
+    font = None
+    font_paths_to_try = [
+        ensure_font(font_path),  # 원래 경로 시도
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",  # Noto CJK (한글 지원)
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",  # DejaVu (영문만)
+    ]
+    
+    for path in font_paths_to_try:
+        try:
+            font = ImageFont.truetype(path, font_size)
+            break
+        except:
+            continue
+    
+    # 모든 경로 실패 시 기본 폰트 사용
+    if font is None:
+        try:
+            font = ImageFont.load_default()
+        except:
+            # 최후의 수단: 기본 폰트도 실패하면 None 사용 (텍스트는 표시되지만 폰트 없음)
+            font = None
+    
     img_pil = Image.fromarray(img)
     d = ImageDraw.Draw(img_pil)
     box = (int(40 * scale), int(40 * scale), int(1000 * scale), int((len(lines) + 1) * 60 * scale))
