@@ -41,42 +41,70 @@ export class VideoView {
         this.container.style.display = 'flex';
         console.log('✅ result-section 표시됨:', this.container.style.display);
 
-        // 기존 src 제거 후 새로 설정 (브라우저 캐시 문제 방지)
-        this.videoElement.src = '';
+        // 비디오 요소 속성 확인
+        if (!this.videoElement) {
+            console.error('❌ videoElement가 없습니다!');
+            this.videoElement = this.container.querySelector('#result-video');
+            if (!this.videoElement) {
+                console.error('❌ #result-video 요소를 찾을 수 없습니다!');
+                return;
+            }
+        }
+
+        // 기존 이벤트 리스너 제거
+        this.videoElement.onloadeddata = null;
+        this.videoElement.onerror = null;
+        this.videoElement.oncanplay = null;
+
+        // 비디오 로드 이벤트 리스너 추가 (src 설정 전에)
+        this.videoElement.onloadeddata = () => {
+            console.log('✅ 비디오 데이터 로드 완료');
+            this.videoElement.play().catch(e => {
+                console.warn('⚠️ 자동 재생 실패 (정상):', e);
+            });
+        };
+        this.videoElement.onerror = (e) => {
+            console.error('❌ 비디오 로드 에러:', e);
+            console.error('비디오 요소 상태:', {
+                src: this.videoElement.src,
+                networkState: this.videoElement.networkState,
+                readyState: this.videoElement.readyState,
+                error: this.videoElement.error
+            });
+        };
+        this.videoElement.oncanplay = () => {
+            console.log('✅ 비디오 재생 준비 완료');
+        };
+
+        // 비디오 src 직접 설정
+        this.videoElement.src = videoURL;
         this.videoElement.load();
         
-        // 짧은 딜레이 후 새 src 설정
-        setTimeout(() => {
-            this.videoElement.src = videoURL;
-            this.videoElement.load();
-            
-            // 비디오 로드 이벤트 리스너 추가
-            this.videoElement.onloadeddata = () => {
-                console.log('✅ 비디오 데이터 로드 완료');
-                this.videoElement.play().catch(e => {
-                    console.warn('⚠️ 자동 재생 실패 (정상):', e);
-                });
-            };
-            this.videoElement.onerror = (e) => {
-                console.error('❌ 비디오 로드 에러:', e);
-                console.error('비디오 요소 상태:', {
-                    src: this.videoElement.src,
-                    networkState: this.videoElement.networkState,
-                    readyState: this.videoElement.readyState,
-                    error: this.videoElement.error
-                });
-            };
-            this.videoElement.oncanplay = () => {
-                console.log('✅ 비디오 재생 준비 완료');
-            };
-        }, 100);
+        // 비디오 요소가 보이도록 강제 (혹시 숨겨져 있을 수 있음)
+        this.videoElement.style.display = 'block';
+        this.videoElement.style.visibility = 'visible';
         
+        // video-container와 video-wrapper도 확인
+        const videoContainer = this.container.querySelector('.video-container');
+        const videoWrapper = this.container.querySelector('.video-wrapper');
+        if (videoContainer) {
+            videoContainer.style.display = 'flex';
+        }
+        if (videoWrapper) {
+            videoWrapper.style.display = 'flex';
+        }
+        
+        // 다운로드 링크 설정
         this.downloadLink.href = downloadURL || videoURL;
         this.downloadLink.setAttribute('download', downloadName || 'result.mp4');
         this.downloadLink.setAttribute('type', 'video/mp4');
         
         console.log('✅ VideoView 설정 완료:', {
             videoSrc: this.videoElement.src,
+            videoElementExists: !!this.videoElement,
+            videoElementDisplay: this.videoElement.style.display,
+            containerDisplay: this.container.style.display,
+            containerVisible: this.container.offsetParent !== null,
             downloadHref: this.downloadLink.href
         });
     }
