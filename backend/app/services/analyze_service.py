@@ -78,17 +78,27 @@ try:
         
         try:
             from ultralytics.nn.modules import conv as ultralytics_conv
+            # Conv 클래스를 명시적으로 추가 (가장 중요!)
+            if hasattr(ultralytics_conv, 'Conv'):
+                safe_globals_list.append(ultralytics_conv.Conv)
             # conv 모듈의 모든 클래스 추가
             for name in dir(ultralytics_conv):
                 if not name.startswith('_') and name[0].isupper():
                     try:
                         cls = getattr(ultralytics_conv, name)
                         if isinstance(cls, type) and issubclass(cls, nn.Module):
-                            safe_globals_list.append(cls)
+                            if cls not in safe_globals_list:  # 중복 방지
+                                safe_globals_list.append(cls)
                     except:
                         pass
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ ultralytics conv 모듈 import 실패: {e}")
+            # 대안: 직접 Conv 클래스 import 시도
+            try:
+                from ultralytics.nn.modules.conv import Conv
+                safe_globals_list.append(Conv)
+            except:
+                pass
         
         try:
             from ultralytics.nn.modules import block
@@ -265,33 +275,82 @@ def _get_models():
         pass
     
     if _pose_model is None:
-        # 모델 로드 직전에 Conv를 다시 한 번 확실히 추가
+        # pose 모델 로드 직전에 모든 ultralytics 클래스를 확실히 추가
         try:
             import torch
-            import sys
-            if hasattr(torch.serialization, 'add_safe_globals') and 'ultralytics.nn.modules' in sys.modules:
-                ultralytics_modules = sys.modules['ultralytics.nn.modules']
-                if hasattr(ultralytics_modules, 'Conv'):
-                    torch.serialization.add_safe_globals([ultralytics_modules.Conv])
-                if hasattr(ultralytics_modules, 'Concat'):
-                    torch.serialization.add_safe_globals([ultralytics_modules.Concat])
-        except Exception:
-            pass
+            if hasattr(torch.serialization, 'add_safe_globals'):
+                # ultralytics.nn.modules를 강제로 import
+                try:
+                    import ultralytics.nn.modules as ultralytics_modules
+                    # Conv 클래스를 직접 찾아서 추가
+                    if hasattr(ultralytics_modules, 'Conv'):
+                        torch.serialization.add_safe_globals([ultralytics_modules.Conv])
+                    if hasattr(ultralytics_modules, 'Concat'):
+                        torch.serialization.add_safe_globals([ultralytics_modules.Concat])
+                    # 모든 서브모듈도 확인
+                    for attr_name in dir(ultralytics_modules):
+                        if not attr_name.startswith('_'):
+                            try:
+                                attr = getattr(ultralytics_modules, attr_name)
+                                # 모듈인 경우 내부 클래스 확인
+                                if isinstance(attr, type) and issubclass(attr, torch.nn.Module):
+                                    torch.serialization.add_safe_globals([attr])
+                            except:
+                                pass
+                except Exception as e:
+                    print(f"⚠️ ultralytics 모듈 import 실패: {e}")
+                    # 대안: conv 서브모듈에서 직접 가져오기
+                    try:
+                        from ultralytics.nn.modules.conv import Conv
+                        torch.serialization.add_safe_globals([Conv])
+                    except:
+                        try:
+                            from ultralytics.nn.modules import Conv
+                            torch.serialization.add_safe_globals([Conv])
+                        except:
+                            pass
+        except Exception as e:
+            print(f"⚠️ safe_globals 추가 실패: {e}")
         _pose_model = YOLO(str(POSE_MODEL_PATH))
     
     if _det_model is None:
-        # detection 모델 로드 직전에 Conv를 다시 한 번 확실히 추가
+        # detection 모델 로드 직전에 모든 ultralytics 클래스를 확실히 추가
         try:
             import torch
             import sys
-            if hasattr(torch.serialization, 'add_safe_globals') and 'ultralytics.nn.modules' in sys.modules:
-                ultralytics_modules = sys.modules['ultralytics.nn.modules']
-                if hasattr(ultralytics_modules, 'Conv'):
-                    torch.serialization.add_safe_globals([ultralytics_modules.Conv])
-                if hasattr(ultralytics_modules, 'Concat'):
-                    torch.serialization.add_safe_globals([ultralytics_modules.Concat])
-        except Exception:
-            pass
+            if hasattr(torch.serialization, 'add_safe_globals'):
+                # ultralytics.nn.modules를 강제로 import
+                try:
+                    import ultralytics.nn.modules as ultralytics_modules
+                    # Conv 클래스를 직접 찾아서 추가
+                    if hasattr(ultralytics_modules, 'Conv'):
+                        torch.serialization.add_safe_globals([ultralytics_modules.Conv])
+                    if hasattr(ultralytics_modules, 'Concat'):
+                        torch.serialization.add_safe_globals([ultralytics_modules.Concat])
+                    # 모든 서브모듈도 확인
+                    for attr_name in dir(ultralytics_modules):
+                        if not attr_name.startswith('_'):
+                            try:
+                                attr = getattr(ultralytics_modules, attr_name)
+                                # 모듈인 경우 내부 클래스 확인
+                                if isinstance(attr, type) and issubclass(attr, torch.nn.Module):
+                                    torch.serialization.add_safe_globals([attr])
+                            except:
+                                pass
+                except Exception as e:
+                    print(f"⚠️ ultralytics 모듈 import 실패: {e}")
+                    # 대안: conv 서브모듈에서 직접 가져오기
+                    try:
+                        from ultralytics.nn.modules.conv import Conv
+                        torch.serialization.add_safe_globals([Conv])
+                    except:
+                        try:
+                            from ultralytics.nn.modules import Conv
+                            torch.serialization.add_safe_globals([Conv])
+                        except:
+                            pass
+        except Exception as e:
+            print(f"⚠️ safe_globals 추가 실패: {e}")
         _det_model = YOLO(str(DET_MODEL_PATH))
     return _pose_model, _det_model
 

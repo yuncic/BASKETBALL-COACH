@@ -8,6 +8,13 @@ from app.routes import analyze
 
 app = FastAPI(title="Shooting Analyzer API", version="1.0.0")
 
+# 서버 시작 시점에 경로 확인 (즉시 실행)
+import sys
+print("=" * 50)
+print("🚀 FastAPI 앱 초기화 중...")
+print(f"Python 버전: {sys.version}")
+print("=" * 50)
+
 # CORS 설정
 app.add_middleware(
     CORSMiddleware,
