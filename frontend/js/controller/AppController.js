@@ -123,6 +123,10 @@ export class AppController {
 
             // 리포트 설정
             this.reportModel.setReport(report);
+            
+            // 명시적으로 뷰 업데이트 (구독자 패턴이 제대로 작동하지 않을 수 있음)
+            this.updateVideoView();
+            this.updateReportView();
         } catch (error) {
             console.error('분석 중 오류:', error);
             alert(`분석 중 오류가 발생했습니다: ${error.message}`);

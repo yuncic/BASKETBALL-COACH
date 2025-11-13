@@ -34,18 +34,14 @@ export class VideoView {
             return;
         }
 
-        // result-section을 표시
-        const resultSection = document.getElementById('result-section');
-        if (resultSection) {
-            resultSection.style.display = 'flex';
-        }
+        // result-section 표시 (container가 result-section이므로 직접 설정)
+        this.container.style.display = 'flex';
 
         this.videoElement.src = videoURL;
         this.videoElement.load();
         this.downloadLink.href = downloadURL || videoURL;
         this.downloadLink.setAttribute('download', downloadName || 'result.mp4');
         this.downloadLink.setAttribute('type', 'video/mp4');
-        this.container.style.display = 'flex';
     }
 
     /**

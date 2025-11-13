@@ -179,7 +179,8 @@ except Exception:
     pass
 
 SLOW_FACTOR = 0.5
-CONF_BALL = 0.20
+# yolov8n 사용 시 공 감지 정확도를 위해 임계값 낮춤
+CONF_BALL = 0.15  # 0.20 -> 0.15 (더 많은 공 감지)
 SMOOTH_WIN = 5
 DEFAULT_FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
 
@@ -709,11 +710,11 @@ def analyze_video_from_path(
         idxs = [i for i in range(idx_center - pre, idx_center + post + 1)
                 if 0 <= i < len(points) and points[i] is not None]
         shrink = pre
-        while len(idxs) < 2 and shrink > 1:
+        while len(idxs) < 3 and shrink > 1:  # 최소 3개 포인트 필요 (예전 코드와 동일)
             shrink //= 2
             idxs = [i for i in range(idx_center - shrink, idx_center + 1)
                     if 0 <= i < len(points) and points[i] is not None]
-        if len(idxs) < 2:
+        if len(idxs) < 3:  # 최소 3개 포인트 필요 (예전 코드와 동일)
             return None
         xs = np.array([points[i][0] for i in idxs], dtype=float)
         ys = np.array([points[i][1] for i in idxs], dtype=float)
