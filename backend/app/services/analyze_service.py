@@ -21,7 +21,8 @@ try:
         from torch.nn.modules.linear import Linear
         from torch.nn.modules.dropout import Dropout, Dropout2d
         from torch.nn.modules.normalization import LayerNorm, GroupNorm
-        from torch.nn.modules.container import ModuleList
+        from torch.nn.modules.container import ModuleList, ModuleDict, Sequential
+        from torch.nn.modules.upsampling import Upsample
         
         # Ultralytics 모델 클래스들
         from ultralytics.nn.tasks import PoseModel, DetectionModel
@@ -31,7 +32,9 @@ try:
             # PyTorch 기본
             nn.Module,
             nn.Sequential,
-            ModuleList,
+            Sequential,  # container.Sequential
+            ModuleList,  # container.ModuleList
+            ModuleDict,  # container.ModuleDict
             Conv2d, Conv1d, Conv3d,
             BatchNorm2d, BatchNorm1d, BatchNorm3d,
             ReLU, SiLU, LeakyReLU, Sigmoid, Tanh,
@@ -39,6 +42,7 @@ try:
             Linear,
             Dropout, Dropout2d,
             LayerNorm, GroupNorm,
+            Upsample,  # upsampling.Upsample
             # Ultralytics 모델
             PoseModel,
             DetectionModel,
