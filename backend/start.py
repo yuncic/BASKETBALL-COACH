@@ -13,9 +13,17 @@ except ValueError:
 
 host = "0.0.0.0"
 
-print(f"Starting server on {host}:{port}")
+print(f"🚀 Starting server on {host}:{port}")
+print(f"📋 Environment: PORT={port_str}")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host=host, port=port)
+    # Railway 헬스체크를 위해 workers=1로 설정
+    uvicorn.run(
+        "main:app",
+        host=host,
+        port=port,
+        log_level="info",
+        access_log=True
+    )
 
