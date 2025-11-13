@@ -3,8 +3,9 @@ import json
 import tempfile
 import base64
 import urllib.parse
+import traceback
 from pathlib import Path
-from fastapi import APIRouter, File, UploadFile, Query
+from fastapi import APIRouter, File, UploadFile, Query, HTTPException
 from fastapi.responses import Response, JSONResponse
 
 from app.services.analyze_service import analyze_video_from_path
@@ -20,35 +21,71 @@ async def options_report():
 @router.post("/analyze")
 async def analyze(file: UploadFile = File(...)):
     """비디오 파일을 업로드하고 분석하여 결과 비디오와 리포트를 반환"""
-    suffix = Path(file.filename).suffix if file.filename else ".mp4"
-    in_path = tempfile.NamedTemporaryFile(delete=False, suffix=suffix).name
-    with open(in_path, "wb") as f:
-        f.write(await file.read())
+    in_path = None
+    out_path = None
+    report_path = None
+    
+    try:
+        suffix = Path(file.filename).suffix if file.filename else ".mp4"
+        in_path = tempfile.NamedTemporaryFile(delete=False, suffix=suffix).name
+        print(f"📁 입력 파일 저장: {in_path}")
+        
+        with open(in_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        print(f"✅ 파일 업로드 완료: {len(content)} bytes")
 
-    out_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
-    report = analyze_video_from_path(in_path, out_path)
-    print("🧩 report 결과:", json.dumps(report, ensure_ascii=False, indent=2))
+        out_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
+        print(f"🔍 영상 분석 시작: {in_path} -> {out_path}")
+        
+        report = analyze_video_from_path(in_path, out_path)
+        print("🧩 report 결과:", json.dumps(report, ensure_ascii=False, indent=2))
 
-    report_path = tempfile.NamedTemporaryFile(delete=False, suffix=".json").name
-    with open(report_path, "w", encoding="utf-8") as rf:
-        json.dump(report, rf, ensure_ascii=False, indent=2)
+        if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:
+            raise RuntimeError("분석된 영상 파일이 생성되지 않았습니다.")
 
-    # 🔹 report를 Base64로 인코딩해서 헤더에도 같이 포함
-    encoded = base64.b64encode(json.dumps(report, ensure_ascii=False).encode("utf-8")).decode("utf-8")
+        report_path = tempfile.NamedTemporaryFile(delete=False, suffix=".json").name
+        with open(report_path, "w", encoding="utf-8") as rf:
+            json.dump(report, rf, ensure_ascii=False, indent=2)
 
-    with open(out_path, "rb") as f:
-        video_data = f.read()
+        # 🔹 report를 Base64로 인코딩해서 헤더에도 같이 포함
+        encoded = base64.b64encode(json.dumps(report, ensure_ascii=False).encode("utf-8")).decode("utf-8")
 
-    response = Response(content=video_data, media_type="video/mp4")
-    response.headers["X-Report-Path"] = report_path
-    response.headers["X-Report-Base64"] = encoded
-    response.headers["Access-Control-Expose-Headers"] = "x-report-path, X-Report-Path, x-report-base64, X-Report-Base64"
-    response.headers["Access-Control-Allow-Headers"] = "x-report-path, X-Report-Path, x-report-base64, X-Report-Base64"
+        with open(out_path, "rb") as f:
+            video_data = f.read()
 
-    if os.path.exists(in_path):
-        os.remove(in_path)
+        response = Response(content=video_data, media_type="video/mp4")
+        response.headers["X-Report-Path"] = report_path
+        response.headers["X-Report-Base64"] = encoded
+        response.headers["Access-Control-Expose-Headers"] = "x-report-path, X-Report-Path, x-report-base64, X-Report-Base64"
+        response.headers["Access-Control-Allow-Headers"] = "x-report-path, X-Report-Path, x-report-base64, X-Report-Base64"
 
-    return response
+        return response
+        
+    except Exception as e:
+        error_msg = str(e)
+        error_trace = traceback.format_exc()
+        print(f"❌ 분석 중 오류 발생:")
+        print(f"   에러 메시지: {error_msg}")
+        print(f"   전체 스택 트레이스:\n{error_trace}")
+        
+        # 임시 파일 정리
+        for path in [in_path, out_path, report_path]:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except:
+                    pass
+        
+        # 에러 응답 반환
+        error_response = {
+            "error": error_msg,
+            "detail": error_trace if os.getenv("DEBUG", "false").lower() == "true" else None
+        }
+        return JSONResponse(
+            content=error_response,
+            status_code=500
+        )
 
 
 @router.get("/report")

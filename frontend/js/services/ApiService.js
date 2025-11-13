@@ -23,7 +23,24 @@ export class ApiService {
         });
 
         if (!response.ok) {
-            throw new Error(`분석 실패: ${response.status}`);
+            // 서버에서 반환한 에러 메시지 파싱 시도
+            let errorMessage = `분석 실패: ${response.status}`;
+            try {
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorData.message || errorMessage;
+                } else {
+                    const errorText = await response.text();
+                    if (errorText) {
+                        errorMessage = errorText;
+                    }
+                }
+            } catch (e) {
+                // JSON 파싱 실패 시 기본 메시지 사용
+                console.warn('에러 응답 파싱 실패:', e);
+            }
+            throw new Error(errorMessage);
         }
 
         // 비디오 Blob 받기
