@@ -56,13 +56,34 @@ try:
         
         # Ultralytics 모듈 클래스들을 동적으로 추가
         try:
-            # ultralytics.nn.modules 모듈 자체의 클래스들 (예: ultralytics.nn.modules.Conv)
+            # ultralytics.nn.modules 패키지 import
             import ultralytics.nn.modules as ultralytics_modules
-            # Conv와 Concat을 먼저 명시적으로 추가
+            
+            # 먼저 conv 모듈에서 Conv를 가져와서 패키지 레벨에 alias
+            try:
+                from ultralytics.nn.modules.conv import Conv as ConvClass
+                # 패키지 레벨에 Conv가 없으면 추가 (모델 파일이 ultralytics.nn.modules.Conv로 참조할 수 있음)
+                if not hasattr(ultralytics_modules, 'Conv'):
+                    setattr(ultralytics_modules, 'Conv', ConvClass)
+                safe_globals_list.append(ConvClass)
+            except Exception as e:
+                print(f"⚠️ Conv 클래스 import 실패: {e}")
+            
+            # Concat도 동일하게 처리
+            try:
+                from ultralytics.nn.modules.block import Concat as ConcatClass
+                if not hasattr(ultralytics_modules, 'Concat'):
+                    setattr(ultralytics_modules, 'Concat', ConcatClass)
+                safe_globals_list.append(ConcatClass)
+            except:
+                pass
+            
+            # 패키지 레벨의 모든 클래스 확인
             if hasattr(ultralytics_modules, 'Conv'):
                 safe_globals_list.append(ultralytics_modules.Conv)
             if hasattr(ultralytics_modules, 'Concat'):
                 safe_globals_list.append(ultralytics_modules.Concat)
+            
             # 나머지 클래스들도 동적으로 추가
             for name in dir(ultralytics_modules):
                 if not name.startswith('_') and name[0].isupper():
@@ -73,7 +94,8 @@ try:
                                 safe_globals_list.append(obj)
                     except:
                         pass
-        except Exception:
+        except Exception as e:
+            print(f"⚠️ ultralytics.nn.modules import 실패: {e}")
             pass
         
         try:
@@ -279,36 +301,40 @@ def _get_models():
         try:
             import torch
             if hasattr(torch.serialization, 'add_safe_globals'):
-                # ultralytics.nn.modules를 강제로 import
+                # Conv 클래스를 여러 경로에서 찾아서 추가
+                conv_classes = []
+                try:
+                    from ultralytics.nn.modules.conv import Conv
+                    conv_classes.append(Conv)
+                except:
+                    pass
                 try:
                     import ultralytics.nn.modules as ultralytics_modules
-                    # Conv 클래스를 직접 찾아서 추가
+                    # 패키지 레벨에 Conv가 있는지 확인
                     if hasattr(ultralytics_modules, 'Conv'):
-                        torch.serialization.add_safe_globals([ultralytics_modules.Conv])
-                    if hasattr(ultralytics_modules, 'Concat'):
-                        torch.serialization.add_safe_globals([ultralytics_modules.Concat])
-                    # 모든 서브모듈도 확인
-                    for attr_name in dir(ultralytics_modules):
-                        if not attr_name.startswith('_'):
-                            try:
-                                attr = getattr(ultralytics_modules, attr_name)
-                                # 모듈인 경우 내부 클래스 확인
-                                if isinstance(attr, type) and issubclass(attr, torch.nn.Module):
-                                    torch.serialization.add_safe_globals([attr])
-                            except:
-                                pass
-                except Exception as e:
-                    print(f"⚠️ ultralytics 모듈 import 실패: {e}")
-                    # 대안: conv 서브모듈에서 직접 가져오기
-                    try:
-                        from ultralytics.nn.modules.conv import Conv
-                        torch.serialization.add_safe_globals([Conv])
-                    except:
+                        conv_classes.append(ultralytics_modules.Conv)
+                    # 없으면 conv 모듈에서 가져와서 추가
+                    else:
                         try:
-                            from ultralytics.nn.modules import Conv
-                            torch.serialization.add_safe_globals([Conv])
+                            from ultralytics.nn.modules.conv import Conv as ConvClass
+                            setattr(ultralytics_modules, 'Conv', ConvClass)
+                            conv_classes.append(ConvClass)
                         except:
                             pass
+                except:
+                    pass
+                
+                # 모든 Conv 클래스를 추가
+                if conv_classes:
+                    torch.serialization.add_safe_globals(conv_classes)
+                    print(f"✅ Conv 클래스 {len(conv_classes)}개 추가됨")
+                
+                # Concat도 추가
+                try:
+                    from ultralytics.nn.modules.block import Concat
+                    torch.serialization.add_safe_globals([Concat])
+                except:
+                    pass
         except Exception as e:
             print(f"⚠️ safe_globals 추가 실패: {e}")
         _pose_model = YOLO(str(POSE_MODEL_PATH))
@@ -317,38 +343,41 @@ def _get_models():
         # detection 모델 로드 직전에 모든 ultralytics 클래스를 확실히 추가
         try:
             import torch
-            import sys
             if hasattr(torch.serialization, 'add_safe_globals'):
-                # ultralytics.nn.modules를 강제로 import
+                # Conv 클래스를 여러 경로에서 찾아서 추가
+                conv_classes = []
+                try:
+                    from ultralytics.nn.modules.conv import Conv
+                    conv_classes.append(Conv)
+                except:
+                    pass
                 try:
                     import ultralytics.nn.modules as ultralytics_modules
-                    # Conv 클래스를 직접 찾아서 추가
+                    # 패키지 레벨에 Conv가 있는지 확인
                     if hasattr(ultralytics_modules, 'Conv'):
-                        torch.serialization.add_safe_globals([ultralytics_modules.Conv])
-                    if hasattr(ultralytics_modules, 'Concat'):
-                        torch.serialization.add_safe_globals([ultralytics_modules.Concat])
-                    # 모든 서브모듈도 확인
-                    for attr_name in dir(ultralytics_modules):
-                        if not attr_name.startswith('_'):
-                            try:
-                                attr = getattr(ultralytics_modules, attr_name)
-                                # 모듈인 경우 내부 클래스 확인
-                                if isinstance(attr, type) and issubclass(attr, torch.nn.Module):
-                                    torch.serialization.add_safe_globals([attr])
-                            except:
-                                pass
-                except Exception as e:
-                    print(f"⚠️ ultralytics 모듈 import 실패: {e}")
-                    # 대안: conv 서브모듈에서 직접 가져오기
-                    try:
-                        from ultralytics.nn.modules.conv import Conv
-                        torch.serialization.add_safe_globals([Conv])
-                    except:
+                        conv_classes.append(ultralytics_modules.Conv)
+                    # 없으면 conv 모듈에서 가져와서 추가
+                    else:
                         try:
-                            from ultralytics.nn.modules import Conv
-                            torch.serialization.add_safe_globals([Conv])
+                            from ultralytics.nn.modules.conv import Conv as ConvClass
+                            setattr(ultralytics_modules, 'Conv', ConvClass)
+                            conv_classes.append(ConvClass)
                         except:
                             pass
+                except:
+                    pass
+                
+                # 모든 Conv 클래스를 추가
+                if conv_classes:
+                    torch.serialization.add_safe_globals(conv_classes)
+                    print(f"✅ Conv 클래스 {len(conv_classes)}개 추가됨")
+                
+                # Concat도 추가
+                try:
+                    from ultralytics.nn.modules.block import Concat
+                    torch.serialization.add_safe_globals([Concat])
+                except:
+                    pass
         except Exception as e:
             print(f"⚠️ safe_globals 추가 실패: {e}")
         _det_model = YOLO(str(DET_MODEL_PATH))
