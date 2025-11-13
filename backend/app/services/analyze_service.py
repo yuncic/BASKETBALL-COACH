@@ -14,12 +14,14 @@ try:
         import torch.nn as nn
         from torch.nn.modules.conv import Conv2d
         from ultralytics.nn.tasks import PoseModel, DetectionModel
+        from ultralytics.nn.modules.conv import Conv
         torch.serialization.add_safe_globals([
             nn.Module,
             nn.Sequential,
             Conv2d,
             PoseModel,
             DetectionModel,
+            Conv,
         ])
 except Exception:
     pass  # PyTorch 2.0.x에서는 필요 없음
