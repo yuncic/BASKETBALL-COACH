@@ -250,32 +250,47 @@ def _get_models():
             except:
                 pass
             try:
-                # ultralytics.nn.modules.Conv (직접 경로) - 명시적으로 추가
+                # ultralytics.nn.modules.conv.Conv (서브모듈 경로) - 먼저 시도
+                from ultralytics.nn.modules.conv import Conv, Concat
+                additional_classes.extend([Conv, Concat])
+                print(f"✅ Added ultralytics.nn.modules.conv.Conv and Concat")
+            except Exception as e:
+                print(f"Warning: Failed to import from ultralytics.nn.modules.conv: {e}")
+                pass
+            try:
+                # ultralytics.nn.modules.Conv (직접 경로) - 두 번째 시도
                 import ultralytics.nn.modules as ultralytics_modules
+                # Conv가 모듈에 직접 정의되어 있는지 확인
                 if hasattr(ultralytics_modules, 'Conv'):
-                    additional_classes.append(ultralytics_modules.Conv)
-                    print(f"✅ Added ultralytics.nn.modules.Conv")
+                    conv_cls = ultralytics_modules.Conv
+                    # 같은 클래스가 아닌 경우에만 추가
+                    if conv_cls not in additional_classes:
+                        additional_classes.append(conv_cls)
+                        print(f"✅ Added ultralytics.nn.modules.Conv (direct)")
                 if hasattr(ultralytics_modules, 'Concat'):
-                    additional_classes.append(ultralytics_modules.Concat)
-                    print(f"✅ Added ultralytics.nn.modules.Concat")
+                    concat_cls = ultralytics_modules.Concat
+                    if concat_cls not in additional_classes:
+                        additional_classes.append(concat_cls)
+                        print(f"✅ Added ultralytics.nn.modules.Concat (direct)")
             except Exception as e:
                 print(f"Warning: Failed to add ultralytics.nn.modules classes: {e}")
                 pass
-            try:
-                # ultralytics.nn.modules.conv.Conv (서브모듈 경로)
-                from ultralytics.nn.modules.conv import Conv, Concat
-                additional_classes.extend([Conv, Concat])
-            except:
-                pass
+            
             if additional_classes:
                 torch.serialization.add_safe_globals(additional_classes)
-    except:
+                print(f"✅ 총 {len(additional_classes)}개 클래스를 safe_globals에 추가했습니다")
+    except Exception as e:
+        print(f"Warning: Failed to setup safe_globals in _get_models: {e}")
         pass
     
     if _pose_model is None:
+        print("🔄 Loading pose model...")
         _pose_model = YOLO(str(POSE_MODEL_PATH))
+        print("✅ Pose model loaded")
     if _det_model is None:
+        print("🔄 Loading detection model...")
         _det_model = YOLO(str(DET_MODEL_PATH))
+        print("✅ Detection model loaded")
     return _pose_model, _det_model
 
 # COCO right side indices
