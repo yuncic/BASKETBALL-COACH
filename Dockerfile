@@ -23,14 +23,13 @@ COPY frontend/ ./frontend/
 # 작업 디렉토리를 backend로 변경
 WORKDIR /app/backend
 
-# 모델 파일 다운로드 (빌드 시점에 미리 다운로드)
-RUN python download_models.py || echo "모델 다운로드 실패 (런타임에 다운로드됨)"
-
 # 포트 노출
 EXPOSE 10000
 
 # 환경 변수 설정
 ENV PYTHONPATH=/app/backend
+ENV OPENCV_DISABLE_OPENCL=1
+ENV QT_QPA_PLATFORM=offscreen
 
 # Railway는 PORT 환경 변수를 자동으로 설정하므로 이를 사용
 # 기본값은 10000

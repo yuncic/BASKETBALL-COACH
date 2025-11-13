@@ -1,5 +1,8 @@
 import os
 import math
+# OpenCV headless 모드 설정 (GUI 라이브러리 불필요)
+os.environ.setdefault('OPENCV_DISABLE_OPENCL', '1')
+os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import cv2
 import numpy as np
 from pathlib import Path
