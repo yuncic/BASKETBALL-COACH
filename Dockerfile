@@ -7,6 +7,7 @@ WORKDIR /app
 # 시스템 패키지 설치 (OpenCV headless에 필요)
 RUN apt-get update && apt-get install -y \
     libgomp1 \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # requirements.txt 복사 및 설치
