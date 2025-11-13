@@ -117,22 +117,38 @@ export class AppController {
                 report: report 
             });
 
+            // 비디오 Blob 검증
+            if (!videoBlob || videoBlob.size === 0) {
+                throw new Error('비디오 파일이 비어있습니다.');
+            }
+            
+            console.log('📹 Blob 정보:', {
+                originalType: videoBlob.type,
+                size: videoBlob.size,
+                sizeMB: (videoBlob.size / 1024 / 1024).toFixed(2) + ' MB'
+            });
+            
             // 비디오 URL 생성 (MIME 타입 명시적으로 설정)
             const videoBlobWithType = videoBlob.type && videoBlob.type.startsWith('video/') 
                 ? videoBlob 
                 : new Blob([videoBlob], { type: 'video/mp4' });
             
-            console.log('📹 Blob 정보:', {
-                originalType: videoBlob.type,
-                size: videoBlob.size,
-                finalType: videoBlobWithType.type
-            });
+            // Blob이 제대로 생성되었는지 확인
+            if (videoBlobWithType.size === 0) {
+                throw new Error('비디오 Blob 생성 실패');
+            }
             
             const videoURL = URL.createObjectURL(videoBlobWithType);
             const downloadURL = URL.createObjectURL(videoBlobWithType);
+            
             const baseName = (file.name || 'result').replace(/\.[^/.]+$/, '');
             
-            console.log('📹 비디오 URL 생성:', { videoURL, downloadURL, baseName });
+            console.log('📹 비디오 URL 생성 완료:', {
+                videoURL: videoURL.substring(0, 50) + '...',
+                downloadURL: downloadURL.substring(0, 50) + '...',
+                blobSize: videoBlobWithType.size,
+                baseName: baseName
+            });
             
             this.videoModel.setVideoURL(videoURL);
             this.videoModel.setDownloadLink(downloadURL);

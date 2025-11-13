@@ -9,6 +9,7 @@ export class VideoView {
         }
         this.videoElement = null;
         this.downloadLink = null;
+        this.currentVideoURL = null; // 중복 호출 방지용
     }
 
     /**
@@ -36,6 +37,13 @@ export class VideoView {
             this.hide();
             return;
         }
+
+        // 중복 호출 방지: 같은 URL이면 스킵
+        if (this.currentVideoURL === videoURL && this.videoElement && this.videoElement.src === videoURL) {
+            console.log('⏭️ 같은 비디오 URL이므로 스킵:', videoURL);
+            return;
+        }
+        this.currentVideoURL = videoURL;
 
         // result-section 표시 (container가 result-section이므로 직접 설정)
         this.container.style.display = 'flex';
@@ -65,12 +73,40 @@ export class VideoView {
         };
         this.videoElement.onerror = (e) => {
             console.error('❌ 비디오 로드 에러:', e);
+            const error = this.videoElement.error;
             console.error('비디오 요소 상태:', {
                 src: this.videoElement.src,
                 networkState: this.videoElement.networkState,
                 readyState: this.videoElement.readyState,
-                error: this.videoElement.error
+                error: error,
+                errorCode: error ? error.code : null,
+                errorMessage: error ? error.message : null,
+                blobURL: videoURL,
+                blobURLType: videoURL.startsWith('blob:') ? 'blob' : 'other'
             });
+            
+            // Blob URL이 유효한지 확인
+            if (videoURL.startsWith('blob:')) {
+                fetch(videoURL)
+                    .then(response => {
+                        console.log('Blob URL fetch 결과:', {
+                            ok: response.ok,
+                            status: response.status,
+                            contentType: response.headers.get('content-type'),
+                            size: response.headers.get('content-length')
+                        });
+                        return response.blob();
+                    })
+                    .then(blob => {
+                        console.log('Blob 정보:', {
+                            size: blob.size,
+                            type: blob.type
+                        });
+                    })
+                    .catch(err => {
+                        console.error('Blob URL fetch 실패:', err);
+                    });
+            }
         };
         this.videoElement.oncanplay = () => {
             console.log('✅ 비디오 재생 준비 완료');
@@ -119,6 +155,7 @@ export class VideoView {
         if (this.videoElement) {
             this.videoElement.src = '';
         }
+        this.currentVideoURL = null;
     }
 
     /**
