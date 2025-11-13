@@ -26,6 +26,9 @@ COPY frontend/ ./frontend/
 # 작업 디렉토리를 backend로 변경
 WORKDIR /app/backend
 
+# start 스크립트 실행 권한 부여
+RUN chmod +x start.sh
+
 # 포트 노출
 EXPOSE 10000
 
@@ -35,6 +38,5 @@ ENV OPENCV_DISABLE_OPENCL=1
 ENV QT_QPA_PLATFORM=offscreen
 
 # Railway는 PORT 환경 변수를 자동으로 설정하므로 이를 사용
-# 기본값은 10000
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-10000}"]
+CMD ["./start.sh"]
 
