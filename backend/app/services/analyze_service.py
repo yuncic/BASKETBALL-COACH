@@ -53,6 +53,20 @@ try:
         
         # Ultralytics 모듈 클래스들을 동적으로 추가
         try:
+            # ultralytics.nn.modules 모듈 자체의 클래스들 (예: ultralytics.nn.modules.Conv)
+            import ultralytics.nn.modules as ultralytics_modules
+            for name in dir(ultralytics_modules):
+                if not name.startswith('_') and name[0].isupper():
+                    try:
+                        obj = getattr(ultralytics_modules, name)
+                        if isinstance(obj, type) and issubclass(obj, nn.Module):
+                            safe_globals_list.append(obj)
+                    except:
+                        pass
+        except:
+            pass
+        
+        try:
             from ultralytics.nn.modules import conv as ultralytics_conv
             # conv 모듈의 모든 클래스 추가
             for name in dir(ultralytics_conv):
@@ -229,6 +243,16 @@ def _get_models():
             except:
                 pass
             try:
+                # ultralytics.nn.modules.Conv (직접 경로)
+                import ultralytics.nn.modules as ultralytics_modules
+                if hasattr(ultralytics_modules, 'Conv'):
+                    additional_classes.append(getattr(ultralytics_modules, 'Conv'))
+                if hasattr(ultralytics_modules, 'Concat'):
+                    additional_classes.append(getattr(ultralytics_modules, 'Concat'))
+            except:
+                pass
+            try:
+                # ultralytics.nn.modules.conv.Conv (서브모듈 경로)
                 from ultralytics.nn.modules.conv import Conv, Concat
                 additional_classes.extend([Conv, Concat])
             except:
