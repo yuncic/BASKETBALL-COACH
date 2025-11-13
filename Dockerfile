@@ -12,7 +12,10 @@ RUN apt-get update && apt-get install -y \
 # requirements.txt 복사 및 설치
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt && \
+    pip cache purge && \
+    rm -rf /root/.cache/pip /tmp/* /var/tmp/*
 
 # 백엔드 코드 복사
 COPY backend/ ./backend/

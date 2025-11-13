@@ -16,6 +16,12 @@ build
 node_modules
 .env
 *.pt
-!backend/yolov8n-pose.pt
-!backend/yolov8x.pt
+tests
+*.test.js
+*.test.ts
+README.md
+RAILWAY_DEPLOY.md
+railway.json
+.dockerignore
+Dockerfile
 
