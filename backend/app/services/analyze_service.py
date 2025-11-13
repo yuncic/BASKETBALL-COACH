@@ -55,18 +55,21 @@ try:
         try:
             # ultralytics.nn.modules 모듈 자체의 클래스들 (예: ultralytics.nn.modules.Conv)
             import ultralytics.nn.modules as ultralytics_modules
-            # Conv 클래스를 명시적으로 추가
+            # Conv와 Concat을 먼저 명시적으로 추가 (가장 중요!)
             if hasattr(ultralytics_modules, 'Conv'):
                 safe_globals_list.append(ultralytics_modules.Conv)
+                print(f"✅ [초기화] Added ultralytics.nn.modules.Conv")
             if hasattr(ultralytics_modules, 'Concat'):
                 safe_globals_list.append(ultralytics_modules.Concat)
+                print(f"✅ [초기화] Added ultralytics.nn.modules.Concat")
             # 나머지 클래스들도 동적으로 추가
             for name in dir(ultralytics_modules):
                 if not name.startswith('_') and name[0].isupper():
                     try:
                         obj = getattr(ultralytics_modules, name)
                         if isinstance(obj, type) and issubclass(obj, nn.Module):
-                            safe_globals_list.append(obj)
+                            if obj not in safe_globals_list:  # 중복 방지
+                                safe_globals_list.append(obj)
                     except:
                         pass
         except Exception as e:
@@ -250,30 +253,32 @@ def _get_models():
             except:
                 pass
             try:
-                # ultralytics.nn.modules.conv.Conv (서브모듈 경로) - 먼저 시도
-                from ultralytics.nn.modules.conv import Conv, Concat
-                additional_classes.extend([Conv, Concat])
-                print(f"✅ Added ultralytics.nn.modules.conv.Conv and Concat")
-            except Exception as e:
-                print(f"Warning: Failed to import from ultralytics.nn.modules.conv: {e}")
-                pass
-            try:
-                # ultralytics.nn.modules.Conv (직접 경로) - 두 번째 시도
+                # ultralytics.nn.modules.Conv (직접 경로) - 먼저 시도
                 import ultralytics.nn.modules as ultralytics_modules
                 # Conv가 모듈에 직접 정의되어 있는지 확인
                 if hasattr(ultralytics_modules, 'Conv'):
                     conv_cls = ultralytics_modules.Conv
-                    # 같은 클래스가 아닌 경우에만 추가
-                    if conv_cls not in additional_classes:
-                        additional_classes.append(conv_cls)
-                        print(f"✅ Added ultralytics.nn.modules.Conv (direct)")
+                    additional_classes.append(conv_cls)
+                    print(f"✅ Added ultralytics.nn.modules.Conv (direct path)")
                 if hasattr(ultralytics_modules, 'Concat'):
                     concat_cls = ultralytics_modules.Concat
-                    if concat_cls not in additional_classes:
-                        additional_classes.append(concat_cls)
-                        print(f"✅ Added ultralytics.nn.modules.Concat (direct)")
+                    additional_classes.append(concat_cls)
+                    print(f"✅ Added ultralytics.nn.modules.Concat (direct path)")
             except Exception as e:
-                print(f"Warning: Failed to add ultralytics.nn.modules classes: {e}")
+                print(f"Warning: Failed to add ultralytics.nn.modules classes (direct): {e}")
+                pass
+            try:
+                # ultralytics.nn.modules.conv.Conv (서브모듈 경로) - 두 번째 시도
+                from ultralytics.nn.modules.conv import Conv, Concat
+                # 이미 추가되지 않은 경우에만 추가
+                if Conv not in additional_classes:
+                    additional_classes.append(Conv)
+                    print(f"✅ Added ultralytics.nn.modules.conv.Conv (submodule path)")
+                if Concat not in additional_classes:
+                    additional_classes.append(Concat)
+                    print(f"✅ Added ultralytics.nn.modules.conv.Concat (submodule path)")
+            except Exception as e:
+                print(f"Warning: Failed to import from ultralytics.nn.modules.conv: {e}")
                 pass
             
             if additional_classes:
