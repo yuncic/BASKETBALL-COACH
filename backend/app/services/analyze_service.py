@@ -50,8 +50,16 @@ try:
         
         # Ultralytics 모듈 클래스들을 동적으로 추가
         try:
-            from ultralytics.nn.modules.conv import Conv
-            safe_globals_list.append(Conv)
+            from ultralytics.nn.modules import conv as ultralytics_conv
+            # conv 모듈의 모든 클래스 추가
+            for name in dir(ultralytics_conv):
+                if not name.startswith('_') and name[0].isupper():
+                    try:
+                        cls = getattr(ultralytics_conv, name)
+                        if isinstance(cls, type) and issubclass(cls, nn.Module):
+                            safe_globals_list.append(cls)
+                    except:
+                        pass
         except:
             pass
         
@@ -208,14 +216,22 @@ def _get_models():
     # 모델 로드 전에 safe_globals가 확실히 설정되었는지 확인
     try:
         import torch
+        import torch.nn as nn
         if hasattr(torch.serialization, 'add_safe_globals'):
             # 주요 클래스들을 다시 한 번 명시적으로 추가 (안전장치)
+            additional_classes = []
             try:
                 from ultralytics.nn.modules.block import C2f, C1, C2, C3, SPPF, Bottleneck
-                from ultralytics.nn.modules.conv import Conv
-                torch.serialization.add_safe_globals([C2f, C1, C2, C3, SPPF, Bottleneck, Conv])
+                additional_classes.extend([C2f, C1, C2, C3, SPPF, Bottleneck])
             except:
                 pass
+            try:
+                from ultralytics.nn.modules.conv import Conv, Concat
+                additional_classes.extend([Conv, Concat])
+            except:
+                pass
+            if additional_classes:
+                torch.serialization.add_safe_globals(additional_classes)
     except:
         pass
     
