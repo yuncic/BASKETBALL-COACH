@@ -181,7 +181,8 @@ except Exception:
 SLOW_FACTOR = 0.5
 CONF_BALL = 0.20
 SMOOTH_WIN = 5
-DEFAULT_FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+# Docker 컨테이너에서는 기본 폰트 사용
+DEFAULT_FONT = None  # PIL의 기본 폰트 사용
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -191,11 +192,14 @@ POSE_MODEL_PATH = MODEL_DIR / "yolov8n-pose.pt"
 DET_MODEL_PATH = MODEL_DIR / "yolov8n.pt"
 
 def ensure_font(path):
+    """폰트 경로를 확인하고, 실패 시 기본 폰트 반환"""
+    if path is None:
+        return None  # 기본 폰트 사용
     try:
         ImageFont.truetype(path, 32)
         return path
     except:
-        return DEFAULT_FONT
+        return None  # 기본 폰트 사용
 
 def angle_abc(a, b, c):
     '''<ABC (B가 꼭짓점) 를 degree로 계산. 누락 시 None 반환.'''
@@ -271,7 +275,18 @@ def fmt_sec(x):
 def draw_panel(img, lines, font_path):
     H, W = img.shape[:2]
     scale = H / 1920 #영상 높이 1920을 기준으로 scale factor 생성
-    font = ImageFont.truetype(ensure_font(font_path), int(38 * scale))
+    
+    # 폰트 로드 (실패 시 기본 폰트 사용)
+    font_size = int(38 * scale)
+    try:
+        resolved_font = ensure_font(font_path)
+        if resolved_font:
+            font = ImageFont.truetype(resolved_font, font_size)
+        else:
+            font = ImageFont.load_default()
+    except:
+        font = ImageFont.load_default()
+    
     img_pil = Image.fromarray(img)
     d = ImageDraw.Draw(img_pil)
     box = (int(40 * scale), int(40 * scale), int(1000 * scale), int((len(lines) + 1) * 60 * scale))
@@ -785,12 +800,24 @@ def analyze_video_from_path(
 
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
-    # H.264 컨테이너 호환성 좋게 avc1 시도, 실패 시 mp4v 폴백
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
-    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
-    if not out.isOpened():
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+    # 코덱 시도 순서: mp4v (가장 호환성 좋음) -> xvid -> avc1
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    out_fps = max(fps * slow_factor, 1.0)
+    
+    out = None
+    codecs_to_try = ["mp4v", "xvid", "XVID", "avc1"]
+    for codec_name in codecs_to_try:
+        fourcc = cv2.VideoWriter_fourcc(*codec_name)
+        out = cv2.VideoWriter(output_path, fourcc, out_fps, (width, height))
+        if out.isOpened():
+            break
+        if out:
+            out.release()
+            out = None
+    
+    if out is None or not out.isOpened():
+        raise RuntimeError(f"비디오 코덱 초기화 실패. 시도한 코덱: {codecs_to_try}")
 
     while True:
         ret, frame = cap.read()
