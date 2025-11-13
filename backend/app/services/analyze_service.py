@@ -7,6 +7,22 @@ import cv2
 import numpy as np
 from pathlib import Path
 from PIL import ImageFont, ImageDraw, Image
+
+# PyTorch 2.6+ weights_only 문제 해결: torch.load를 패치
+try:
+    import torch
+    _original_torch_load = torch.load
+    def _patched_torch_load(*args, **kwargs):
+        # weights_only가 명시되지 않았거나 True인 경우 False로 변경
+        if 'weights_only' not in kwargs:
+            kwargs['weights_only'] = False
+        elif kwargs.get('weights_only') is True:
+            kwargs['weights_only'] = False
+        return _original_torch_load(*args, **kwargs)
+    torch.load = _patched_torch_load
+except Exception:
+    pass
+
 from ultralytics import YOLO
 
 # PyTorch 2.1+ 보안 정책 대응: 모델 로드 전에 필요한 클래스들을 허용 목록에 추가
