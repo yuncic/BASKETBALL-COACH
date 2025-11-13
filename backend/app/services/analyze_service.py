@@ -179,8 +179,7 @@ except Exception:
     pass
 
 SLOW_FACTOR = 0.5
-# yolov8n 사용 시 공 감지 정확도를 위해 임계값 낮춤
-CONF_BALL = 0.15  # 0.20 -> 0.15 (더 많은 공 감지)
+CONF_BALL = 0.20
 SMOOTH_WIN = 5
 DEFAULT_FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
 
@@ -188,8 +187,7 @@ DEFAULT_FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MODEL_DIR = BASE_DIR
 POSE_MODEL_PATH = MODEL_DIR / "yolov8n-pose.pt"
-# 메모리 절약: yolov8x -> yolov8n (공 감지에는 충분함, 로직은 동일)
-DET_MODEL_PATH = MODEL_DIR / "yolov8n.pt"
+DET_MODEL_PATH = MODEL_DIR / "yolov8x.pt"  # 예전 코드와 동일: yolov8x 사용
 
 def ensure_font(path):
     """폰트 경로를 확인하고, 실패 시 기본 폰트 반환"""
@@ -272,38 +270,10 @@ def fmt_sec(x):
     return f"{x:.2f}s" if (x is not None and np.isfinite(x)) else "-"
 
 def draw_panel(img, lines, font_path):
-    # 기존 스타일 유지 (영상 안쪽 박스)
+    # 예전 코드와 동일: 간단한 폰트 로드
     H, W = img.shape[:2]
     scale = H / 1920
-    
-    # 폰트 로드 (실패 시 Noto CJK 폰트 사용)
-    font_size = int(38 * scale)
-    try:
-        resolved_font = ensure_font(font_path)
-        font = ImageFont.truetype(resolved_font, font_size)
-    except:
-        # Docker 컨테이너에서 Noto CJK 폰트 사용 (한글 지원)
-        try:
-            # Noto Sans CJK 폰트 경로들 시도
-            noto_paths = [
-                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttf",
-            ]
-            font = None
-            for path in noto_paths:
-                try:
-                    font = ImageFont.truetype(path, font_size)
-                    break
-                except:
-                    continue
-            if font is None:
-                # 폴백: DejaVu 폰트
-                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
-        except:
-            # 최후의 수단: 기본 폰트
-            font = ImageFont.load_default()
-    
+    font = ImageFont.truetype(ensure_font(font_path), int(38 * scale))
     img_pil = Image.fromarray(img)
     d = ImageDraw.Draw(img_pil)
     box = (int(40 * scale), int(40 * scale), int(1000 * scale), int((len(lines) + 1) * 60 * scale))
@@ -710,15 +680,17 @@ def analyze_video_from_path(
         idxs = [i for i in range(idx_center - pre, idx_center + post + 1)
                 if 0 <= i < len(points) and points[i] is not None]
         shrink = pre
-        while len(idxs) < 3 and shrink > 1:  # 최소 3개 포인트 필요 (예전 코드와 동일)
+        while len(idxs) < 2 and shrink > 1:  # 예전 코드와 동일: 최소 2개부터 시작
             shrink //= 2
             idxs = [i for i in range(idx_center - shrink, idx_center + 1)
                     if 0 <= i < len(points) and points[i] is not None]
-        if len(idxs) < 3:  # 최소 3개 포인트 필요 (예전 코드와 동일)
+        if len(idxs) < 2:  # 예전 코드와 동일: 2개 미만이면 None
             return None
         xs = np.array([points[i][0] for i in idxs], dtype=float)
         ys = np.array([points[i][1] for i in idxs], dtype=float)
         ts = np.array([t[i] for i in idxs], dtype=float)
+        if len(idxs) < 3:  # 예전 코드와 동일: 3개 미만이면 None
+            return None
         valid = np.isfinite(xs) & np.isfinite(ys) & np.isfinite(ts)
         if np.sum(valid) < 3:
             return None
@@ -810,24 +782,12 @@ def analyze_video_from_path(
 
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
-    # 코덱 시도 순서: mp4v (가장 호환성 좋음) -> xvid -> avc1
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    out_fps = max(fps * slow_factor, 1.0)
-    
-    out = None
-    codecs_to_try = ["mp4v", "xvid", "XVID", "avc1"]
-    for codec_name in codecs_to_try:
-        fourcc = cv2.VideoWriter_fourcc(*codec_name)
-        out = cv2.VideoWriter(output_path, fourcc, out_fps, (width, height))
-        if out.isOpened():
-            break
-        if out:
-            out.release()
-            out = None
-    
-    if out is None or not out.isOpened():
-        raise RuntimeError(f"비디오 코덱 초기화 실패. 시도한 코덱: {codecs_to_try}")
+    # 예전 코드와 동일: H.264 컨테이너 호환성 좋게 avc1 시도, 실패 시 mp4v 폴백
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+    if not out.isOpened():
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
 
     while True:
         ret, frame = cap.read()

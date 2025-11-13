@@ -111,12 +111,29 @@ export class AppController {
         try {
             const { videoBlob, report } = await this.apiService.analyzeVideo(file);
 
-            // 비디오 URL 생성
-            const videoURL = URL.createObjectURL(videoBlob);
-            const downloadURL = URL.createObjectURL(
-                videoBlob.type ? videoBlob : new Blob([videoBlob], { type: 'video/mp4' })
-            );
+            console.log('✅ 분석 완료:', { 
+                videoBlobSize: videoBlob.size, 
+                videoBlobType: videoBlob.type,
+                report: report 
+            });
+
+            // 비디오 URL 생성 (MIME 타입 명시적으로 설정)
+            const videoBlobWithType = videoBlob.type && videoBlob.type.startsWith('video/') 
+                ? videoBlob 
+                : new Blob([videoBlob], { type: 'video/mp4' });
+            
+            console.log('📹 Blob 정보:', {
+                originalType: videoBlob.type,
+                size: videoBlob.size,
+                finalType: videoBlobWithType.type
+            });
+            
+            const videoURL = URL.createObjectURL(videoBlobWithType);
+            const downloadURL = URL.createObjectURL(videoBlobWithType);
             const baseName = (file.name || 'result').replace(/\.[^/.]+$/, '');
+            
+            console.log('📹 비디오 URL 생성:', { videoURL, downloadURL, baseName });
+            
             this.videoModel.setVideoURL(videoURL);
             this.videoModel.setDownloadLink(downloadURL);
             this.videoModel.setDownloadFilename(`${baseName}-analysis.mp4`);
@@ -124,9 +141,11 @@ export class AppController {
             // 리포트 설정
             this.reportModel.setReport(report);
             
+            console.log('🔄 뷰 업데이트 시작');
             // 명시적으로 뷰 업데이트 (구독자 패턴이 제대로 작동하지 않을 수 있음)
             this.updateVideoView();
             this.updateReportView();
+            console.log('✅ 뷰 업데이트 완료');
         } catch (error) {
             console.error('분석 중 오류:', error);
             alert(`분석 중 오류가 발생했습니다: ${error.message}`);
