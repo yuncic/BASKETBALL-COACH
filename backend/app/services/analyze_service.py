@@ -187,8 +187,8 @@ DEFAULT_FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MODEL_DIR = BASE_DIR
 POSE_MODEL_PATH = MODEL_DIR / "yolov8n-pose.pt"
-# 원본 코드대로 yolov8x 사용 (메모리 문제 시 yolov8n으로 변경 가능)
-DET_MODEL_PATH = MODEL_DIR / "yolov8x.pt"
+# 메모리 절약: yolov8x -> yolov8n (공 감지에는 충분함, 로직은 동일)
+DET_MODEL_PATH = MODEL_DIR / "yolov8n.pt"
 
 def ensure_font(path):
     """폰트 경로를 확인하고, 실패 시 기본 폰트 반환"""
