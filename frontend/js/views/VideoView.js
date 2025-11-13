@@ -34,6 +34,12 @@ export class VideoView {
             return;
         }
 
+        // result-section을 표시
+        const resultSection = document.getElementById('result-section');
+        if (resultSection) {
+            resultSection.style.display = 'flex';
+        }
+
         this.videoElement.src = videoURL;
         this.videoElement.load();
         this.downloadLink.href = downloadURL || videoURL;

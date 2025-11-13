@@ -181,25 +181,23 @@ except Exception:
 SLOW_FACTOR = 0.5
 CONF_BALL = 0.20
 SMOOTH_WIN = 5
-# Docker 컨테이너에서는 기본 폰트 사용
-DEFAULT_FONT = None  # PIL의 기본 폰트 사용
+DEFAULT_FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MODEL_DIR = BASE_DIR
 POSE_MODEL_PATH = MODEL_DIR / "yolov8n-pose.pt"
-# 메모리 절약: yolov8x -> yolov8n (공 감지에는 충분함)
-DET_MODEL_PATH = MODEL_DIR / "yolov8n.pt"
+# 원본 코드대로 yolov8x 사용 (메모리 문제 시 yolov8n으로 변경 가능)
+DET_MODEL_PATH = MODEL_DIR / "yolov8x.pt"
 
 def ensure_font(path):
     """폰트 경로를 확인하고, 실패 시 기본 폰트 반환"""
-    if path is None:
-        return None  # 기본 폰트 사용
     try:
         ImageFont.truetype(path, 32)
         return path
     except:
-        return None  # 기본 폰트 사용
+        # 서버/맥 어디서든 동작하도록 폴백
+        return DEFAULT_FONT
 
 def angle_abc(a, b, c):
     '''<ABC (B가 꼭짓점) 를 degree로 계산. 누락 시 None 반환.'''
@@ -273,19 +271,37 @@ def fmt_sec(x):
     return f"{x:.2f}s" if (x is not None and np.isfinite(x)) else "-"
 
 def draw_panel(img, lines, font_path):
+    # 기존 스타일 유지 (영상 안쪽 박스)
     H, W = img.shape[:2]
-    scale = H / 1920 #영상 높이 1920을 기준으로 scale factor 생성
+    scale = H / 1920
     
-    # 폰트 로드 (실패 시 기본 폰트 사용)
+    # 폰트 로드 (실패 시 Noto CJK 폰트 사용)
     font_size = int(38 * scale)
     try:
         resolved_font = ensure_font(font_path)
-        if resolved_font:
-            font = ImageFont.truetype(resolved_font, font_size)
-        else:
-            font = ImageFont.load_default()
+        font = ImageFont.truetype(resolved_font, font_size)
     except:
-        font = ImageFont.load_default()
+        # Docker 컨테이너에서 Noto CJK 폰트 사용 (한글 지원)
+        try:
+            # Noto Sans CJK 폰트 경로들 시도
+            noto_paths = [
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttf",
+            ]
+            font = None
+            for path in noto_paths:
+                try:
+                    font = ImageFont.truetype(path, font_size)
+                    break
+                except:
+                    continue
+            if font is None:
+                # 폴백: DejaVu 폰트
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
+        except:
+            # 최후의 수단: 기본 폰트
+            font = ImageFont.load_default()
     
     img_pil = Image.fromarray(img)
     d = ImageDraw.Draw(img_pil)
@@ -294,7 +310,7 @@ def draw_panel(img, lines, font_path):
     y = int(70 * scale)
     for t in lines:
         d.text((int(60 * scale), y), t, fill=(255, 255, 255), font=font)
-        y += int(60 * scale) #줄바꿈
+        y += int(60 * scale)
     return np.array(img_pil)
 
 def unit_vec(v):
@@ -480,17 +496,13 @@ def analyze_video_from_path(
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
 
-        # 메모리 효율적인 추론 (imgsz 제한)
-        pose_out = pose_model(frame, imgsz=640, verbose=False)
+        pose_out = pose_model(frame)
         pose = pose_out[0]
         kp = None
         if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
             kp = pose.keypoints.xy[0].cpu().numpy()
-        # 메모리 정리
-        del pose_out
-        gc.collect()
 
-        det = det_model(frame, imgsz=640, verbose=False)[0]
+        det = det_model(frame)[0]
         bxy = None
         if det and det.boxes is not None and len(det.boxes) > 0:
             best_conf = -1.0
@@ -504,9 +516,6 @@ def analyze_video_from_path(
                     if float(conf) > best_conf:
                         best_conf = float(conf)
                         bxy = ((x1 + x2) / 2, (y1 + y2) / 2)
-        # 메모리 정리
-        del det
-        gc.collect()
 
         if kp is None:
             knees.append(np.nan)
@@ -823,15 +832,11 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
-        # 메모리 효율적인 추론
-        pose_out = pose_model(frame, imgsz=640, verbose=False)
+        pose_out = pose_model(frame)
         pose = pose_out[0]
         annotated = pose.plot()
         annotated = draw_panel(annotated, lines, font_path)
         out.write(annotated)
-        # 메모리 정리
-        del pose_out, pose, annotated
-        gc.collect()
 
     cap.release()
     out.release()
