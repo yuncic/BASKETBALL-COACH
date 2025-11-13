@@ -12,30 +12,77 @@ try:
     # PyTorch 2.1+에서는 weights_only=True가 기본값이므로 필요한 클래스들을 추가
     if hasattr(torch.serialization, 'add_safe_globals'):
         import torch.nn as nn
-        from torch.nn.modules.conv import Conv2d
-        from torch.nn.modules.batchnorm import BatchNorm2d, BatchNorm1d
-        from torch.nn.modules.activation import ReLU, SiLU
-        from torch.nn.modules.pooling import MaxPool2d, AvgPool2d
+        
+        # PyTorch 기본 모듈들
+        from torch.nn.modules.conv import Conv2d, Conv1d, Conv3d
+        from torch.nn.modules.batchnorm import BatchNorm2d, BatchNorm1d, BatchNorm3d
+        from torch.nn.modules.activation import ReLU, SiLU, LeakyReLU, Sigmoid, Tanh
+        from torch.nn.modules.pooling import MaxPool2d, AvgPool2d, AdaptiveAvgPool2d, AdaptiveMaxPool2d
         from torch.nn.modules.linear import Linear
+        from torch.nn.modules.dropout import Dropout, Dropout2d
+        from torch.nn.modules.normalization import LayerNorm, GroupNorm
+        
+        # Ultralytics 모델 클래스들
         from ultralytics.nn.tasks import PoseModel, DetectionModel
-        from ultralytics.nn.modules.conv import Conv
-        torch.serialization.add_safe_globals([
+        
+        # Ultralytics 모듈 클래스들 - 동적으로 추가
+        safe_globals_list = [
+            # PyTorch 기본
             nn.Module,
             nn.Sequential,
-            Conv2d,
-            BatchNorm2d,
-            BatchNorm1d,
-            ReLU,
-            SiLU,
-            MaxPool2d,
-            AvgPool2d,
+            Conv2d, Conv1d, Conv3d,
+            BatchNorm2d, BatchNorm1d, BatchNorm3d,
+            ReLU, SiLU, LeakyReLU, Sigmoid, Tanh,
+            MaxPool2d, AvgPool2d, AdaptiveAvgPool2d, AdaptiveMaxPool2d,
             Linear,
+            Dropout, Dropout2d,
+            LayerNorm, GroupNorm,
+            # Ultralytics 모델
             PoseModel,
             DetectionModel,
-            Conv,
-        ])
-except Exception:
-    pass  # PyTorch 2.0.x에서는 필요 없음
+        ]
+        
+        # Ultralytics 모듈 클래스들을 동적으로 추가
+        try:
+            from ultralytics.nn.modules.conv import Conv
+            safe_globals_list.append(Conv)
+        except:
+            pass
+        
+        try:
+            from ultralytics.nn.modules import block
+            # block 모듈의 모든 클래스 추가
+            for name in dir(block):
+                if not name.startswith('_') and name[0].isupper():
+                    try:
+                        cls = getattr(block, name)
+                        if isinstance(cls, type) and issubclass(cls, nn.Module):
+                            safe_globals_list.append(cls)
+                    except:
+                        pass
+        except:
+            pass
+        
+        # head 모듈도 추가
+        try:
+            from ultralytics.nn.modules import head
+            for name in dir(head):
+                if not name.startswith('_') and name[0].isupper():
+                    try:
+                        cls = getattr(head, name)
+                        if isinstance(cls, type) and issubclass(cls, nn.Module):
+                            safe_globals_list.append(cls)
+                    except:
+                        pass
+        except:
+            pass
+        
+        torch.serialization.add_safe_globals(safe_globals_list)
+        print(f"✅ PyTorch safe globals 추가 완료 ({len(safe_globals_list)}개 클래스)")
+except Exception as e:
+    # PyTorch 2.0.x에서는 필요 없음, 또는 import 실패 시 무시
+    print(f"⚠️ Warning: Failed to add safe globals: {e}")
+    pass
 
 SLOW_FACTOR = 0.5
 CONF_BALL = 0.20
