@@ -27,7 +27,7 @@ COPY frontend/ ./frontend/
 WORKDIR /app/backend
 
 # start 스크립트 실행 권한 부여
-RUN chmod +x start.sh
+RUN chmod +x start.sh start.py
 
 # 포트 노출
 EXPOSE 10000
@@ -38,5 +38,6 @@ ENV OPENCV_DISABLE_OPENCL=1
 ENV QT_QPA_PLATFORM=offscreen
 
 # Railway는 PORT 환경 변수를 자동으로 설정하므로 이를 사용
-CMD ["./start.sh"]
+# Python 스크립트 사용 (더 확실함)
+CMD ["python", "start.py"]
 
