@@ -6,6 +6,24 @@ from pathlib import Path
 from PIL import ImageFont, ImageDraw, Image
 from ultralytics import YOLO
 
+# PyTorch 2.1+ 보안 정책 대응: 모델 로드 전에 필요한 클래스들을 허용 목록에 추가
+try:
+    import torch
+    # PyTorch 2.1+에서는 weights_only=True가 기본값이므로 필요한 클래스들을 추가
+    if hasattr(torch.serialization, 'add_safe_globals'):
+        import torch.nn as nn
+        from torch.nn.modules.conv import Conv2d
+        from ultralytics.nn.tasks import PoseModel, DetectionModel
+        torch.serialization.add_safe_globals([
+            nn.Module,
+            nn.Sequential,
+            Conv2d,
+            PoseModel,
+            DetectionModel,
+        ])
+except Exception:
+    pass  # PyTorch 2.0.x에서는 필요 없음
+
 SLOW_FACTOR = 0.5
 CONF_BALL = 0.20
 SMOOTH_WIN = 5
