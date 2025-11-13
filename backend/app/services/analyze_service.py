@@ -808,12 +808,26 @@ def analyze_video_from_path(
 
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
-    # 예전 코드와 동일: H.264 컨테이너 호환성 좋게 avc1 시도, 실패 시 mp4v 폴백
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
-    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
-    if not out.isOpened():
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+    # PC 브라우저 호환성을 위해 H.264 강제 사용 (avc1 -> H264 -> mp4v 순서)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    out_fps = max(fps * slow_factor, 1.0)
+    
+    # 코덱 시도 순서: H264 (가장 호환성 좋음) -> avc1 -> mp4v
+    out = None
+    codecs_to_try = ["H264", "avc1", "mp4v"]
+    for codec_name in codecs_to_try:
+        fourcc = cv2.VideoWriter_fourcc(*codec_name)
+        out = cv2.VideoWriter(output_path, fourcc, out_fps, (width, height))
+        if out.isOpened():
+            print(f"✅ 비디오 코덱 '{codec_name}' 사용")
+            break
+        if out:
+            out.release()
+            out = None
+    
+    if out is None or not out.isOpened():
+        raise RuntimeError(f"비디오 코덱 초기화 실패. 시도한 코덱: {codecs_to_try}")
 
     while True:
         ret, frame = cap.read()
