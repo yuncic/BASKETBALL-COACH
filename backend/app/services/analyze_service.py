@@ -13,12 +13,23 @@ try:
     if hasattr(torch.serialization, 'add_safe_globals'):
         import torch.nn as nn
         from torch.nn.modules.conv import Conv2d
+        from torch.nn.modules.batchnorm import BatchNorm2d, BatchNorm1d
+        from torch.nn.modules.activation import ReLU, SiLU
+        from torch.nn.modules.pooling import MaxPool2d, AvgPool2d
+        from torch.nn.modules.linear import Linear
         from ultralytics.nn.tasks import PoseModel, DetectionModel
         from ultralytics.nn.modules.conv import Conv
         torch.serialization.add_safe_globals([
             nn.Module,
             nn.Sequential,
             Conv2d,
+            BatchNorm2d,
+            BatchNorm1d,
+            ReLU,
+            SiLU,
+            MaxPool2d,
+            AvgPool2d,
+            Linear,
             PoseModel,
             DetectionModel,
             Conv,
