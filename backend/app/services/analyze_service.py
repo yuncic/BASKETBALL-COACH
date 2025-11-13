@@ -21,6 +21,7 @@ try:
         from torch.nn.modules.linear import Linear
         from torch.nn.modules.dropout import Dropout, Dropout2d
         from torch.nn.modules.normalization import LayerNorm, GroupNorm
+        from torch.nn.modules.container import ModuleList
         
         # Ultralytics 모델 클래스들
         from ultralytics.nn.tasks import PoseModel, DetectionModel
@@ -30,6 +31,7 @@ try:
             # PyTorch 기본
             nn.Module,
             nn.Sequential,
+            ModuleList,
             Conv2d, Conv1d, Conv3d,
             BatchNorm2d, BatchNorm1d, BatchNorm3d,
             ReLU, SiLU, LeakyReLU, Sigmoid, Tanh,
@@ -198,6 +200,21 @@ _det_model = None
 def _get_models():
     """모델을 지연 로드 (첫 호출 시 로드)"""
     global _pose_model, _det_model
+    
+    # 모델 로드 전에 safe_globals가 확실히 설정되었는지 확인
+    try:
+        import torch
+        if hasattr(torch.serialization, 'add_safe_globals'):
+            # 주요 클래스들을 다시 한 번 명시적으로 추가 (안전장치)
+            try:
+                from ultralytics.nn.modules.block import C2f, C1, C2, C3, SPPF, Bottleneck
+                from ultralytics.nn.modules.conv import Conv
+                torch.serialization.add_safe_globals([C2f, C1, C2, C3, SPPF, Bottleneck, Conv])
+            except:
+                pass
+    except:
+        pass
+    
     if _pose_model is None:
         _pose_model = YOLO(str(POSE_MODEL_PATH))
     if _det_model is None:
