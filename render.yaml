@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: basketball-coach
-    env: python
-    buildCommand: cd backend && python3.10 -m pip install -r requirements.txt || python3 -m pip install -r requirements.txt && python3 download_models.py || python3.10 download_models.py
-    startCommand: cd backend && PYTHONPATH=. uvicorn main:app --host 0.0.0.0 --port 10000
-    envVars:
-      - key: PYTHON_VERSION
-        value: 3.10.13
