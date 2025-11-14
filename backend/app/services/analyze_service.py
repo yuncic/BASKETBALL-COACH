@@ -863,28 +863,49 @@ def analyze_video_from_path(
     if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
         try:
             import subprocess
+            print(f"🔄 ffmpeg 재인코딩 시작: {output_path} -> {temp_output}")
+            
             # ffmpeg로 H.264 코덱으로 재인코딩 (브라우저 호환성 최대화)
+            # -vf "transpose=0" 옵션으로 회전 메타데이터 제거 및 실제 회전 보정
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-i", output_path,
                 "-c:v", "libx264",  # H.264 코덱
                 "-preset", "fast",  # 빠른 인코딩
                 "-crf", "23",  # 품질 설정 (낮을수록 고품질)
-                "-pix_fmt", "yuv420p",  # 브라우저 호환성
+                "-pix_fmt", "yuv420p",  # 브라우저 호환성 (필수)
                 "-movflags", "+faststart",  # 웹 스트리밍 최적화
-                "-metadata:s:v:0", "rotate=0",  # 회전 메타데이터 제거
+                "-metadata", "rotate=0",  # 회전 메타데이터 제거
+                "-c:a", "copy",  # 오디오는 그대로 복사 (없으면 무시)
                 temp_output
             ]
+            
+            print(f"📋 ffmpeg 명령어: {' '.join(ffmpeg_cmd)}")
             result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=300)
+            
             if result.returncode == 0 and os.path.exists(temp_output) and os.path.getsize(temp_output) > 0:
                 # 재인코딩 성공 시 원본 파일 교체
+                original_size = os.path.getsize(output_path)
+                new_size = os.path.getsize(temp_output)
                 os.replace(temp_output, output_path)
-                print(f"✅ ffmpeg 재인코딩 완료: {os.path.getsize(output_path)} bytes")
+                print(f"✅ ffmpeg 재인코딩 완료: {original_size} bytes -> {new_size} bytes")
             else:
-                print(f"⚠️ ffmpeg 재인코딩 실패, 원본 파일 사용: {result.stderr}")
+                print(f"⚠️ ffmpeg 재인코딩 실패 (원본 파일 사용)")
+                print(f"   Return code: {result.returncode}")
+                print(f"   stderr: {result.stderr[:500]}")  # 처음 500자만 출력
                 if os.path.exists(temp_output):
                     os.remove(temp_output)
+        except FileNotFoundError:
+            print(f"⚠️ ffmpeg가 설치되지 않음 (원본 파일 사용)")
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+        except subprocess.TimeoutExpired:
+            print(f"⚠️ ffmpeg 재인코딩 타임아웃 (원본 파일 사용)")
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
         except Exception as e:
             print(f"⚠️ ffmpeg 재인코딩 중 오류 (원본 파일 사용): {e}")
+            import traceback
+            print(traceback.format_exc())
             if os.path.exists(temp_output):
                 os.remove(temp_output)
     
