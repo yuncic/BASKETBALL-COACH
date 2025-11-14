@@ -857,6 +857,37 @@ def analyze_video_from_path(
 
     cap.release()
     out.release()
+    
+    # PC 브라우저 호환성을 위해 ffmpeg로 H.264 재인코딩
+    temp_output = output_path + ".temp"
+    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        try:
+            import subprocess
+            # ffmpeg로 H.264 코덱으로 재인코딩 (브라우저 호환성 최대화)
+            ffmpeg_cmd = [
+                "ffmpeg", "-y", "-i", output_path,
+                "-c:v", "libx264",  # H.264 코덱
+                "-preset", "fast",  # 빠른 인코딩
+                "-crf", "23",  # 품질 설정 (낮을수록 고품질)
+                "-pix_fmt", "yuv420p",  # 브라우저 호환성
+                "-movflags", "+faststart",  # 웹 스트리밍 최적화
+                "-metadata:s:v:0", "rotate=0",  # 회전 메타데이터 제거
+                temp_output
+            ]
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=300)
+            if result.returncode == 0 and os.path.exists(temp_output) and os.path.getsize(temp_output) > 0:
+                # 재인코딩 성공 시 원본 파일 교체
+                os.replace(temp_output, output_path)
+                print(f"✅ ffmpeg 재인코딩 완료: {os.path.getsize(output_path)} bytes")
+            else:
+                print(f"⚠️ ffmpeg 재인코딩 실패, 원본 파일 사용: {result.stderr}")
+                if os.path.exists(temp_output):
+                    os.remove(temp_output)
+        except Exception as e:
+            print(f"⚠️ ffmpeg 재인코딩 중 오류 (원본 파일 사용): {e}")
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+    
     gc.collect()  # 최종 정리
 
     if (not os.path.exists(output_path)) or os.path.getsize(output_path) == 0:

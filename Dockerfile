@@ -6,12 +6,14 @@ WORKDIR /app
 
 # 시스템 패키지 설치 (OpenCV headless에 필요)
 # 폰트 설치 (한글 폰트 포함)
+# ffmpeg 설치 (비디오 재인코딩용)
 RUN apt-get update && apt-get install -y \
     libgomp1 \
     libgl1 \
     libglib2.0-0 \
     fonts-dejavu-core \
     fonts-noto-cjk \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # requirements.txt 복사 및 설치

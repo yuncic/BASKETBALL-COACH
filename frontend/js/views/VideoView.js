@@ -98,21 +98,40 @@ export class VideoView {
                     isPortrait: isPortrait
                 });
                 
-                // 세로 영상인데 wrapper가 가로로 보이면 (또는 그 반대) 회전 보정
-                // 사용자가 "왼쪽으로 90도 회전"이라고 했으므로 오른쪽으로 90도 회전 보정
+                // 모바일에서 비디오가 왼쪽으로 90도 회전되어 보이는 경우
+                // 피드백 박스는 정상이므로 비디오 메타데이터의 회전 정보 때문
+                // 세로 영상인데 가로로 표시되면 회전 보정 필요
+                
+                // 사용자가 "왼쪽으로 90도 회전"이라고 했으므로, 오른쪽으로 90도 회전 보정
+                // 또는 비디오가 실제로 회전되어 있다면 CSS로 보정
+                
+                // 세로 영상(높이 > 너비)이 가로 컨테이너에 들어가면 회전 보정
                 if (isPortrait && wrapperWidth > wrapperHeight) {
                     console.log('⚠️ 비디오 회전 감지 - 오른쪽으로 90도 회전 보정');
                     this.videoElement.style.transform = 'rotate(90deg)';
+                    this.videoElement.style.transformOrigin = 'center center';
                     // 회전 후 크기 조정
                     this.videoElement.style.width = '100%';
                     this.videoElement.style.height = 'auto';
                 } else if (!isPortrait && wrapperHeight > wrapperWidth) {
                     console.log('⚠️ 비디오 회전 감지 - 왼쪽으로 90도 회전 보정');
                     this.videoElement.style.transform = 'rotate(-90deg)';
+                    this.videoElement.style.transformOrigin = 'center center';
                     this.videoElement.style.width = '100%';
                     this.videoElement.style.height = 'auto';
                 } else {
-                    console.log('✅ 비디오 방향 정상 - 회전 불필요');
+                    // 추가 확인: 비디오가 실제로 회전되어 있는지 확인
+                    // 모바일에서 자주 발생하는 문제
+                    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                    if (isMobile && isPortrait) {
+                        // 모바일에서 세로 영상이 회전되어 보이는 경우
+                        console.log('⚠️ 모바일 세로 영상 회전 보정 시도');
+                        // 일단 시도해보고 사용자가 확인
+                        this.videoElement.style.transform = 'rotate(90deg)';
+                        this.videoElement.style.transformOrigin = 'center center';
+                    } else {
+                        console.log('✅ 비디오 방향 정상 - 회전 불필요');
+                    }
                 }
             }
         };
