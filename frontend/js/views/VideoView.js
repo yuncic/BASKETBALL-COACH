@@ -65,27 +65,60 @@ export class VideoView {
         this.videoElement.oncanplay = null;
 
         // 비디오 로드 이벤트 리스너 추가 (src 설정 전에)
-        this.videoElement.onloadeddata = () => {
-            console.log('✅ 비디오 데이터 로드 완료');
-            console.log('비디오 메타데이터:', {
-                videoWidth: this.videoElement.videoWidth,
-                videoHeight: this.videoElement.videoHeight,
-                duration: this.videoElement.duration
-            });
-            
-            // 모바일 회전 문제 해결: 비디오 크기에 따라 회전 보정
+        this.videoElement.onloadedmetadata = () => {
+            console.log('✅ 비디오 메타데이터 로드 완료');
             const videoWidth = this.videoElement.videoWidth;
             const videoHeight = this.videoElement.videoHeight;
             
-            // 세로 영상인 경우 (높이가 너비보다 큰 경우)
-            if (videoHeight > videoWidth) {
-                // 회전 보정 (90도 회전된 경우)
-                const wrapper = this.container.querySelector('.video-wrapper');
-                if (wrapper) {
-                    wrapper.style.transform = 'none'; // 회전 초기화
+            console.log('비디오 메타데이터:', {
+                videoWidth: videoWidth,
+                videoHeight: videoHeight,
+                duration: this.videoElement.duration,
+                naturalWidth: this.videoElement.naturalWidth,
+                naturalHeight: this.videoElement.naturalHeight
+            });
+            
+            // 모바일 회전 문제 해결: 비디오가 왼쪽으로 90도 회전되어 있다면 보정
+            // 피드백 박스는 정상이므로 비디오 메타데이터의 회전 정보 때문
+            const wrapper = this.container.querySelector('.video-wrapper');
+            if (wrapper) {
+                // 회전 초기화
+                wrapper.style.transform = 'none';
+                this.videoElement.style.transform = 'none';
+                
+                // 모바일에서 비디오가 왼쪽으로 90도 회전되어 보이는 경우
+                // 세로 영상(높이 > 너비)이 가로로 표시되면 회전 보정 필요
+                const isPortrait = videoHeight > videoWidth;
+                const wrapperWidth = wrapper.offsetWidth || 270;
+                const wrapperHeight = wrapper.offsetHeight || 480;
+                
+                console.log('비디오/컨테이너 크기 비교:', {
+                    videoSize: `${videoWidth}x${videoHeight}`,
+                    wrapperSize: `${wrapperWidth}x${wrapperHeight}`,
+                    isPortrait: isPortrait
+                });
+                
+                // 세로 영상인데 wrapper가 가로로 보이면 (또는 그 반대) 회전 보정
+                // 사용자가 "왼쪽으로 90도 회전"이라고 했으므로 오른쪽으로 90도 회전 보정
+                if (isPortrait && wrapperWidth > wrapperHeight) {
+                    console.log('⚠️ 비디오 회전 감지 - 오른쪽으로 90도 회전 보정');
+                    this.videoElement.style.transform = 'rotate(90deg)';
+                    // 회전 후 크기 조정
+                    this.videoElement.style.width = '100%';
+                    this.videoElement.style.height = 'auto';
+                } else if (!isPortrait && wrapperHeight > wrapperWidth) {
+                    console.log('⚠️ 비디오 회전 감지 - 왼쪽으로 90도 회전 보정');
+                    this.videoElement.style.transform = 'rotate(-90deg)';
+                    this.videoElement.style.width = '100%';
+                    this.videoElement.style.height = 'auto';
+                } else {
+                    console.log('✅ 비디오 방향 정상 - 회전 불필요');
                 }
             }
-            
+        };
+        
+        this.videoElement.onloadeddata = () => {
+            console.log('✅ 비디오 데이터 로드 완료');
             this.videoElement.play().catch(e => {
                 console.warn('⚠️ 자동 재생 실패 (정상):', e);
             });

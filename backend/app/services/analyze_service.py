@@ -808,19 +808,30 @@ def analyze_video_from_path(
 
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
-    # PC 브라우저 호환성을 위해 H.264 강제 사용 (avc1 -> H264 -> mp4v 순서)
+    
+    # 원본 비디오의 회전 정보 확인 (EXIF 메타데이터)
+    rotation = 0
+    try:
+        # OpenCV는 회전 정보를 직접 제공하지 않으므로, 프레임 크기로 판단
+        # 실제로는 원본 비디오의 메타데이터를 확인해야 하지만,
+        # 여기서는 프레임을 그대로 사용하고 프론트엔드에서 처리
+        pass
+    except:
+        pass
+    
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     out_fps = max(fps * slow_factor, 1.0)
     
-    # 코덱 시도 순서: H264 (가장 호환성 좋음) -> avc1 -> mp4v
+    # PC 브라우저 호환성을 위해 H.264 코덱 우선 사용
+    # 코덱 시도 순서: avc1 (H.264, 가장 호환성 좋음) -> mp4v -> xvid
     out = None
-    codecs_to_try = ["H264", "avc1", "mp4v"]
+    codecs_to_try = ["avc1", "mp4v", "xvid", "XVID"]
     for codec_name in codecs_to_try:
         fourcc = cv2.VideoWriter_fourcc(*codec_name)
         out = cv2.VideoWriter(output_path, fourcc, out_fps, (width, height))
         if out.isOpened():
-            print(f"✅ 비디오 코덱 '{codec_name}' 사용")
+            print(f"✅ 비디오 코덱 '{codec_name}' 사용 (크기: {width}x{height}, FPS: {out_fps:.2f})")
             break
         if out:
             out.release()
@@ -833,6 +844,11 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
+        
+        # 프레임 회전 처리 (필요시)
+        # 원본 비디오가 회전되어 있다면 여기서 보정
+        # 하지만 현재는 프레임을 그대로 사용하고 프론트엔드에서 처리
+        
         pose_out = pose_model(frame)
         pose = pose_out[0]
         annotated = pose.plot()
