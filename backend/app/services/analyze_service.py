@@ -809,18 +809,34 @@ def analyze_video_from_path(
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
     
-    # 원본 비디오의 회전 정보 확인 (EXIF 메타데이터)
-    rotation = 0
+    # 원본 비디오의 회전 정보 확인 (ffprobe 사용)
+    rotation_angle = 0
     try:
-        # OpenCV는 회전 정보를 직접 제공하지 않으므로, 프레임 크기로 판단
-        # 실제로는 원본 비디오의 메타데이터를 확인해야 하지만,
-        # 여기서는 프레임을 그대로 사용하고 프론트엔드에서 처리
-        pass
-    except:
-        pass
+        import subprocess
+        # ffprobe로 회전 메타데이터 확인
+        probe_cmd = [
+            "ffprobe", "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream_tags=rotate",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            input_path
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+        if result.returncode == 0 and result.stdout.strip():
+            rotation_angle = int(result.stdout.strip())
+            print(f"📐 원본 비디오 회전 정보: {rotation_angle}도")
+    except Exception as e:
+        print(f"⚠️ 회전 정보 확인 실패 (기본값 사용): {e}")
+        rotation_angle = 0
     
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # 회전이 필요한 경우 출력 크기 조정
+    if rotation_angle in [90, 270]:
+        # 90도 또는 270도 회전 시 width와 height 교체
+        output_width, output_height = height, width
+    else:
+        output_width, output_height = width, height
     out_fps = max(fps * slow_factor, 1.0)
     
     # PC 브라우저 호환성을 위해 H.264 코덱 우선 사용
@@ -829,9 +845,9 @@ def analyze_video_from_path(
     codecs_to_try = ["avc1", "mp4v", "xvid", "XVID"]
     for codec_name in codecs_to_try:
         fourcc = cv2.VideoWriter_fourcc(*codec_name)
-        out = cv2.VideoWriter(output_path, fourcc, out_fps, (width, height))
+        out = cv2.VideoWriter(output_path, fourcc, out_fps, (output_width, output_height))
         if out.isOpened():
-            print(f"✅ 비디오 코덱 '{codec_name}' 사용 (크기: {width}x{height}, FPS: {out_fps:.2f})")
+            print(f"✅ 비디오 코덱 '{codec_name}' 사용 (크기: {output_width}x{output_height}, FPS: {out_fps:.2f})")
             break
         if out:
             out.release()
@@ -845,9 +861,13 @@ def analyze_video_from_path(
         if not ret:
             break
         
-        # 프레임 회전 처리 (필요시)
-        # 원본 비디오가 회전되어 있다면 여기서 보정
-        # 하지만 현재는 프레임을 그대로 사용하고 프론트엔드에서 처리
+        # 프레임 회전 처리 (원본 비디오가 회전되어 있다면 실제로 프레임 회전)
+        if rotation_angle == 90:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        elif rotation_angle == 180:
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
+        elif rotation_angle == 270:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
         pose_out = pose_model(frame)
         pose = pose_out[0]
@@ -867,6 +887,7 @@ def analyze_video_from_path(
             
             # ffmpeg로 H.264 코덱으로 재인코딩 (브라우저 호환성 최대화)
             # 오디오 스트림이 없을 수 있으므로 -an 옵션 사용
+            # 회전 메타데이터를 완전히 제거하고 프레임 자체가 올바른 방향이 되도록 보장
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-i", output_path,
                 "-c:v", "libx264",  # H.264 코덱
@@ -874,7 +895,8 @@ def analyze_video_from_path(
                 "-crf", "23",  # 품질 설정 (낮을수록 고품질)
                 "-pix_fmt", "yuv420p",  # 브라우저 호환성 (필수)
                 "-movflags", "+faststart",  # 웹 스트리밍 최적화
-                "-metadata", "rotate=0",  # 회전 메타데이터 제거
+                "-metadata:s:v:0", "rotate=0",  # 비디오 스트림의 회전 메타데이터 제거
+                "-metadata", "rotate=",  # 전체 파일의 회전 메타데이터 제거
                 "-an",  # 오디오 제거 (비디오만)
                 "-f", "mp4",  # 출력 포맷 명시
                 temp_output
