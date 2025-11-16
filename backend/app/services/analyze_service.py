@@ -468,27 +468,6 @@ def analyze_video_from_path(
     pose_model, det_model = _get_models()
 
     # ---------- Pass1: 포즈 & 공 궤적 ----------
-    # 원본 비디오의 회전 메타데이터 확인 (ffprobe 사용)
-    rotation_angle = 0
-    try:
-        import subprocess
-        # ffprobe로 회전 메타데이터 확인
-        probe_cmd = [
-            "ffprobe", "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "side_data=rotation",
-            "-of", "default=noprint_wrappers=1:nokey=1",
-            input_path
-        ]
-        result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
-        if result.returncode == 0 and result.stdout.strip():
-            try:
-                rotation_angle = int(result.stdout.strip())
-                print(f"📐 원본 비디오 회전 정보: {rotation_angle}도")
-            except ValueError:
-                pass
-    except Exception:
-        pass
-    
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
         raise RuntimeError(f"영상 열기 실패: {input_path}")
@@ -511,15 +490,6 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
-        
-        # 원본 비디오가 회전 메타데이터를 가지고 있다면 프레임을 실제로 회전
-        if rotation_angle == 90:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-        elif rotation_angle == 180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
-        elif rotation_angle == 270:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
 
@@ -838,39 +808,17 @@ def analyze_video_from_path(
 
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
-    if not cap.isOpened():
-        raise RuntimeError(f"영상 열기 실패: {input_path}")
-    
-    # 회전이 필요한 경우 출력 크기 조정
-    if rotation_angle in [90, 270]:
-        output_width, output_height = H, W
-    else:
-        output_width, output_height = W, H
-    
-    out_fps = max(fps * slow_factor, 1.0)
-    
-    # 코덱 시도: mp4v 우선 (가장 안정적), 실패 시 xvid
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output_path, fourcc, out_fps, (output_width, output_height))
+    # H.264 컨테이너 호환성 좋게 avc1 시도, 실패 시 mp4v 폴백
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
     if not out.isOpened():
-        fourcc = cv2.VideoWriter_fourcc(*"XVID")
-        out = cv2.VideoWriter(output_path, fourcc, out_fps, (output_width, output_height))
-        if not out.isOpened():
-            raise RuntimeError(f"비디오 코덱 초기화 실패. mp4v, XVID 모두 실패")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        
-        # 원본 비디오가 회전 메타데이터를 가지고 있다면 프레임을 실제로 회전
-        if rotation_angle == 90:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-        elif rotation_angle == 180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
-        elif rotation_angle == 270:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        
         pose_out = pose_model(frame)
         pose = pose_out[0]
         annotated = pose.plot()
