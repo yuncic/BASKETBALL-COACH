@@ -852,6 +852,7 @@ def analyze_video_from_path(
             
             # ffmpeg로 H.264 코덱으로 재인코딩 (브라우저 호환성 최대화)
             # 오디오 스트림이 없을 수 있으므로 -an 옵션 사용
+            # 모바일 브라우저 호환성을 위해 회전 메타데이터 제거 (프레임은 그대로)
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-i", output_path,
                 "-c:v", "libx264",  # H.264 코덱
@@ -859,6 +860,7 @@ def analyze_video_from_path(
                 "-crf", "23",  # 품질 설정 (낮을수록 고품질)
                 "-pix_fmt", "yuv420p",  # 브라우저 호환성 (필수)
                 "-movflags", "+faststart",  # 웹 스트리밍 최적화
+                "-metadata:s:v:0", "rotate=0",  # 회전 메타데이터 제거 (모바일 브라우저 호환)
                 "-an",  # 오디오 제거 (비디오만)
                 "-f", "mp4",  # 출력 포맷 명시
                 temp_output
