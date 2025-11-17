@@ -476,6 +476,7 @@ def analyze_video_from_path(
         probe_cmds = [
             ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "side_data=rotation", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
             ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream_tags=rotate", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
+            ["ffprobe", "-v", "error", "-show_entries", "format_tags=rotate", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
         ]
         for probe_cmd in probe_cmds:
             result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
@@ -483,12 +484,29 @@ def analyze_video_from_path(
                 try:
                     rotation_angle = int(result.stdout.strip())
                     if rotation_angle != 0:
-                        print(f"📐 원본 비디오 회전 정보: {rotation_angle}도")
+                        print(f"📐 원본 비디오 회전 정보: {rotation_angle}도 (명령어: {' '.join(probe_cmd)})")
                         break
                 except ValueError:
                     pass
+        
+        # 회전 메타데이터가 없어도 실제 프레임 크기로 판단
+        if rotation_angle == 0:
+            # 첫 프레임을 읽어서 크기 확인
+            test_cap = cv2.VideoCapture(input_path)
+            if test_cap.isOpened():
+                ret, test_frame = test_cap.read()
+                if ret:
+                    frame_h, frame_w = test_frame.shape[:2]
+                    reported_w = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    reported_h = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    # 실제 프레임 크기와 보고된 크기가 다르면 회전 가능성
+                    if frame_w != reported_w or frame_h != reported_h:
+                        print(f"⚠️ 프레임 크기 불일치: 보고됨={reported_w}x{reported_h}, 실제={frame_w}x{frame_h}")
+                test_cap.release()
     except Exception as e:
         print(f"⚠️ 회전 정보 확인 실패: {e}")
+        import traceback
+        print(traceback.format_exc())
     
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
@@ -514,12 +532,15 @@ def analyze_video_from_path(
             break
         
         # 원본 비디오가 회전 메타데이터를 가지고 있다면 프레임을 실제로 회전
+        # 모바일에서 "왼쪽으로 90도"는 실제로는 오른쪽으로 90도 회전 필요
         if rotation_angle == 90:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+            # 왼쪽으로 90도 = 오른쪽으로 270도 = 반시계 방향으로 90도
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         elif rotation_angle == 180:
             frame = cv2.rotate(frame, cv2.ROTATE_180)
         elif rotation_angle == 270:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            # 오른쪽으로 90도 = 시계 방향으로 90도
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
@@ -859,12 +880,15 @@ def analyze_video_from_path(
             break
         
         # 원본 비디오가 회전 메타데이터를 가지고 있다면 프레임을 실제로 회전
+        # 모바일에서 "왼쪽으로 90도"는 실제로는 오른쪽으로 90도 회전 필요
         if rotation_angle == 90:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+            # 왼쪽으로 90도 = 오른쪽으로 270도 = 반시계 방향으로 90도
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         elif rotation_angle == 180:
             frame = cv2.rotate(frame, cv2.ROTATE_180)
         elif rotation_angle == 270:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            # 오른쪽으로 90도 = 시계 방향으로 90도
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         
         pose_out = pose_model(frame)
         pose = pose_out[0]
