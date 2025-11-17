@@ -874,6 +874,58 @@ def analyze_video_from_path(
 
     cap.release()
     out.release()
+    
+    # PC 브라우저 호환성을 위해 ffmpeg로 H.264 재인코딩
+    temp_output = output_path + ".temp"
+    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        try:
+            import subprocess
+            print(f"🔄 ffmpeg 재인코딩 시작: {output_path} -> {temp_output}")
+            
+            # ffmpeg로 H.264 코덱으로 재인코딩 (브라우저 호환성 최대화)
+            # 오디오 스트림이 없을 수 있으므로 -an 옵션 사용
+            ffmpeg_cmd = [
+                "ffmpeg", "-y", "-i", output_path,
+                "-c:v", "libx264",  # H.264 코덱
+                "-preset", "fast",  # 빠른 인코딩
+                "-crf", "23",  # 품질 설정 (낮을수록 고품질)
+                "-pix_fmt", "yuv420p",  # 브라우저 호환성 (필수)
+                "-movflags", "+faststart",  # 웹 스트리밍 최적화
+                "-an",  # 오디오 제거 (비디오만)
+                "-f", "mp4",  # 출력 포맷 명시
+                temp_output
+            ]
+            
+            print(f"📋 ffmpeg 명령어: {' '.join(ffmpeg_cmd)}")
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0 and os.path.exists(temp_output) and os.path.getsize(temp_output) > 0:
+                # 재인코딩 성공 시 원본 파일 교체
+                original_size = os.path.getsize(output_path)
+                new_size = os.path.getsize(temp_output)
+                os.replace(temp_output, output_path)
+                print(f"✅ ffmpeg 재인코딩 완료: {original_size} bytes -> {new_size} bytes")
+            else:
+                print(f"⚠️ ffmpeg 재인코딩 실패 (원본 파일 사용)")
+                print(f"   Return code: {result.returncode}")
+                print(f"   stdout: {result.stdout[-500:] if result.stdout else 'None'}")
+                print(f"   stderr: {result.stderr[-500:] if result.stderr else 'None'}")
+                if os.path.exists(temp_output):
+                    os.remove(temp_output)
+        except FileNotFoundError:
+            print(f"⚠️ ffmpeg가 설치되지 않음 (원본 파일 사용)")
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+        except subprocess.TimeoutExpired:
+            print(f"⚠️ ffmpeg 재인코딩 타임아웃 (원본 파일 사용)")
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+        except Exception as e:
+            print(f"⚠️ ffmpeg 재인코딩 중 오류 (원본 파일 사용): {e}")
+            import traceback
+            print(traceback.format_exc())
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
 
     if (not os.path.exists(output_path)) or os.path.getsize(output_path) == 0:
         raise RuntimeError("주석 영상 생성 실패(파일이 비어있음). ffmpeg/코덱 점검 필요.")
