@@ -499,6 +499,7 @@ def analyze_video_from_path(
                     pass
         
         # 회전 메타데이터가 없어도 세로 영상이면 실제 프레임 확인
+        original_rotation_metadata = rotation_angle  # 원본 회전 메타데이터 저장
         if rotation_angle == 0 and H > W:
             # 세로 영상: 첫 프레임을 읽어서 실제 방향 확인
             ret, test_frame = cap.read()
@@ -513,7 +514,14 @@ def analyze_video_from_path(
                 else:
                     print(f"📐 세로 영상 감지 ({W}x{H}), 실제 프레임 ({frame_w}x{frame_h}): 회전 불필요")
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 첫 프레임으로 되돌리기
-        elif rotation_angle == 0:
+        
+        # 원본 비디오에 회전 메타데이터가 있으면 ffmpeg로 제거해야 함
+        # 하지만 실제 프레임은 이미 올바른 방향이므로 회전하지 않음
+        if original_rotation_metadata != 0 and rotation_angle == 0:
+            print(f"⚠️ 원본 비디오에 회전 메타데이터 ({original_rotation_metadata}도)가 있지만 실제 프레임은 정상 방향입니다.")
+            print(f"   ffmpeg 재인코딩 시 회전 메타데이터를 제거합니다.")
+        
+        if rotation_angle == 0:
             print(f"📐 회전 메타데이터 없음 ({W}x{H}): 원본 그대로 사용")
     except Exception as e:
         print(f"⚠️ 회전 정보 확인 실패: {e}")
@@ -909,15 +917,19 @@ def analyze_video_from_path(
             
             # ffmpeg로 H.264 코덱으로 재인코딩 (브라우저 호환성 최대화)
             # 오디오 스트림이 없을 수 있으므로 -an 옵션 사용
-            # 회전 메타데이터 제거 (모바일 브라우저가 자동 회전하지 않도록)
+            # 회전 메타데이터 완전히 제거 (모바일 브라우저가 자동 회전하지 않도록)
+            # -noautorotate: 입력의 회전 메타데이터 무시
+            # -metadata rotate=: 모든 회전 메타데이터 제거
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-i", output_path,
+                "-noautorotate",  # 입력의 회전 메타데이터 무시
                 "-c:v", "libx264",  # H.264 코덱
                 "-preset", "fast",  # 빠른 인코딩
                 "-crf", "23",  # 품질 설정 (낮을수록 고품질)
                 "-pix_fmt", "yuv420p",  # 브라우저 호환성 (필수)
                 "-movflags", "+faststart",  # 웹 스트리밍 최적화
-                "-metadata:s:v:0", "rotate=0",  # 회전 메타데이터 제거
+                "-metadata:s:v:0", "rotate=0",  # 비디오 스트림 회전 메타데이터 제거
+                "-metadata", "rotate=",  # 전체 파일 회전 메타데이터 제거
                 "-an",  # 오디오 제거 (비디오만)
                 "-f", "mp4",  # 출력 포맷 명시
                 temp_output
