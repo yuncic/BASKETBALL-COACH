@@ -476,51 +476,6 @@ def analyze_video_from_path(
     fps = fps_reported if (10.0 <= fps_reported <= 240.0) else 30.0
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
-    # 첫 프레임을 읽어서 실제 프레임 크기 확인
-    ret, first_frame = cap.read()
-    if not ret:
-        raise RuntimeError("첫 프레임 읽기 실패")
-    actual_frame_h, actual_frame_w = first_frame.shape[:2]
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 첫 프레임으로 되돌리기
-    
-    print(f"📐 비디오 크기: 보고된 크기 {W}x{H}, 실제 프레임 {actual_frame_w}x{actual_frame_h}")
-    
-    # 원본 비디오의 회전 메타데이터 확인 (ffprobe 사용)
-    rotation_angle = 0
-    try:
-        import subprocess
-        # ffprobe로 회전 메타데이터 확인
-        probe_cmds = [
-            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "side_data=rotation", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
-            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream_tags=rotate", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
-            ["ffprobe", "-v", "error", "-show_entries", "format_tags=rotate", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
-        ]
-        for probe_cmd in probe_cmds:
-            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0 and result.stdout.strip():
-                try:
-                    rotation_angle = int(result.stdout.strip())
-                    if rotation_angle != 0:
-                        print(f"📐 원본 비디오 회전 메타데이터: {rotation_angle}도")
-                        break
-                except ValueError:
-                    pass
-    except Exception as e:
-        print(f"⚠️ 회전 메타데이터 확인 실패: {e}")
-    
-    # 실제 프레임이 세로(actual_frame_h > actual_frame_w)인 경우 90도 회전
-    # 모바일에서 업로드된 세로 영상(384x640)을 가로 영상(640x384)으로 변환
-    if rotation_angle == 0 and actual_frame_h > actual_frame_w:
-        rotation_angle = 90
-        print(f"📐 세로 영상 감지 (실제 프레임 {actual_frame_w}x{actual_frame_h}) → 90도 회전하여 {actual_frame_h}x{actual_frame_w}로 변환")
-    elif rotation_angle == 0:
-        print(f"📐 회전 없음 (실제 프레임 {actual_frame_w}x{actual_frame_h})")
-    
-    # 회전 각도 정규화 (90, 180, 270만 처리)
-    if rotation_angle not in [0, 90, 180, 270]:
-        rotation_angle = 0
-    
 
     time = []  # 초 단위
     knees = []
@@ -535,14 +490,6 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
-        
-        # 회전 메타데이터가 있으면 프레임 회전 (분석을 위해)
-        if rotation_angle == 90:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-        elif rotation_angle == 180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
-        elif rotation_angle == 270:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
@@ -862,35 +809,16 @@ def analyze_video_from_path(
 
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
-    
-    # 회전 후 출력 크기 결정
-    if rotation_angle in [90, 270]:
-        output_width, output_height = H, W  # 가로/세로 교체
-    else:
-        output_width, output_height = W, H
-    
-    # Docker 환경 호환성을 위해 mp4v 먼저 시도, 실패 시 avc1 폴백
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
+    # H.264 컨테이너 호환성 좋게 avc1 시도, 실패 시 mp4v 폴백
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
     if not out.isOpened():
-        fourcc = cv2.VideoWriter_fourcc(*"avc1")
-        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
-        if not out.isOpened():
-            raise RuntimeError("비디오 코덱 초기화 실패. mp4v, avc1 모두 실패")
-
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        
-        # 회전 메타데이터가 있으면 프레임 회전 (출력 비디오에 반영)
-        if rotation_angle == 90:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-        elif rotation_angle == 180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
-        elif rotation_angle == 270:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
-        
         pose_out = pose_model(frame)
         pose = pose_out[0]
         annotated = pose.plot()
