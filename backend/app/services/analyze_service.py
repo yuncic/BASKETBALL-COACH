@@ -477,55 +477,10 @@ def analyze_video_from_path(
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    # 원본 비디오의 회전 메타데이터 확인 (ffprobe 사용)
+    # 회전 메타데이터를 무시하고 원본 프레임 그대로 사용
+    # PC/모바일 모두 원본 그대로 업로드되도록 처리
     rotation_angle = 0
-    try:
-        import subprocess
-        # ffprobe로 회전 메타데이터 확인 (여러 방법 시도)
-        probe_cmds = [
-            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "side_data=rotation", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
-            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream_tags=rotate", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
-            ["ffprobe", "-v", "error", "-show_entries", "format_tags=rotate", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
-        ]
-        for probe_cmd in probe_cmds:
-            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
-            if result.returncode == 0 and result.stdout.strip():
-                try:
-                    rotation_angle = int(result.stdout.strip())
-                    if rotation_angle != 0:
-                        print(f"📐 원본 비디오 회전 정보: {rotation_angle}도 (명령어: {' '.join(probe_cmd)})")
-                        break
-                except ValueError:
-                    pass
-        
-        # 회전 메타데이터가 없어도 세로 영상이면 실제 프레임 확인
-        original_rotation_metadata = rotation_angle  # 원본 회전 메타데이터 저장
-        if rotation_angle == 0 and H > W:
-            # 세로 영상: 첫 프레임을 읽어서 실제 방향 확인
-            ret, test_frame = cap.read()
-            if ret:
-                frame_h, frame_w = test_frame.shape[:2]
-                # 실제 프레임 크기는 세로(384x640)이지만, 내용이 회전되어 있을 수 있음
-                # 모바일에서 세로 촬영 시 보통 왼쪽으로 90도 회전되어 저장됨
-                # 따라서 오른쪽으로 90도 회전 (시계 방향) 필요
-                # 프레임 크기가 같아도 내용이 회전되어 있으면 회전 필요
-                # 세로 영상이면 무조건 오른쪽으로 90도 회전 시도 (모바일 촬영 패턴)
-                rotation_angle = 90  # 오른쪽으로 90도 회전 (시계 방향)
-                print(f"📐 세로 영상 감지 ({W}x{H}), 실제 프레임 ({frame_w}x{frame_h}): 모바일 촬영 패턴으로 90도 회전 적용")
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 첫 프레임으로 되돌리기
-        
-        # 원본 비디오에 회전 메타데이터가 있으면 ffmpeg로 제거해야 함
-        # 하지만 실제 프레임은 이미 올바른 방향이므로 회전하지 않음
-        if original_rotation_metadata != 0 and rotation_angle == 0:
-            print(f"⚠️ 원본 비디오에 회전 메타데이터 ({original_rotation_metadata}도)가 있지만 실제 프레임은 정상 방향입니다.")
-            print(f"   ffmpeg 재인코딩 시 회전 메타데이터를 제거합니다.")
-        
-        if rotation_angle == 0:
-            print(f"📐 회전 메타데이터 없음 ({W}x{H}): 원본 그대로 사용")
-    except Exception as e:
-        print(f"⚠️ 회전 정보 확인 실패: {e}")
-        import traceback
-        print(traceback.format_exc())
+    print(f"📐 원본 비디오 그대로 사용 ({W}x{H}): 회전 처리 없음")
 
     time = []  # 초 단위
     knees = []
@@ -870,33 +825,17 @@ def analyze_video_from_path(
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
     
-    # 회전이 필요한 경우 출력 크기 조정
-    if rotation_angle in [90, 270]:
-        output_width, output_height = H, W
-    else:
-        output_width, output_height = W, H
-    
     # H.264 컨테이너 호환성 좋게 avc1 시도, 실패 시 mp4v 폴백
     fourcc = cv2.VideoWriter_fourcc(*"avc1")
-    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
+    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
     if not out.isOpened():
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
+        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        
-        # 원본 비디오가 회전 메타데이터를 가지고 있거나 세로 영상이 회전되어 있으면 프레임 회전
-        if rotation_angle == 90:
-            # 오른쪽으로 90도 = 시계 방향으로 90도
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-        elif rotation_angle == 180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
-        elif rotation_angle == 270:
-            # 왼쪽으로 90도 = 반시계 방향으로 90도
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
         pose_out = pose_model(frame)
         pose = pose_out[0]
@@ -906,64 +845,6 @@ def analyze_video_from_path(
 
     cap.release()
     out.release()
-    
-    # PC 브라우저 호환성을 위해 ffmpeg로 H.264 재인코딩
-    temp_output = output_path + ".temp"
-    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-        try:
-            import subprocess
-            print(f"🔄 ffmpeg 재인코딩 시작: {output_path} -> {temp_output}")
-            
-            # ffmpeg로 H.264 코덱으로 재인코딩 (브라우저 호환성 최대화)
-            # 오디오 스트림이 없을 수 있으므로 -an 옵션 사용
-            # 회전 메타데이터 완전히 제거 (모바일 브라우저가 자동 회전하지 않도록)
-            # -noautorotate: 입력의 회전 메타데이터 무시
-            # -metadata rotate=: 모든 회전 메타데이터 제거
-            ffmpeg_cmd = [
-                "ffmpeg", "-y", "-i", output_path,
-                "-noautorotate",  # 입력의 회전 메타데이터 무시
-                "-c:v", "libx264",  # H.264 코덱
-                "-preset", "fast",  # 빠른 인코딩
-                "-crf", "23",  # 품질 설정 (낮을수록 고품질)
-                "-pix_fmt", "yuv420p",  # 브라우저 호환성 (필수)
-                "-movflags", "+faststart",  # 웹 스트리밍 최적화
-                "-metadata:s:v:0", "rotate=0",  # 비디오 스트림 회전 메타데이터 제거
-                "-metadata", "rotate=",  # 전체 파일 회전 메타데이터 제거
-                "-an",  # 오디오 제거 (비디오만)
-                "-f", "mp4",  # 출력 포맷 명시
-                temp_output
-            ]
-            
-            print(f"📋 ffmpeg 명령어: {' '.join(ffmpeg_cmd)}")
-            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=300)
-            
-            if result.returncode == 0 and os.path.exists(temp_output) and os.path.getsize(temp_output) > 0:
-                # 재인코딩 성공 시 원본 파일 교체
-                original_size = os.path.getsize(output_path)
-                new_size = os.path.getsize(temp_output)
-                os.replace(temp_output, output_path)
-                print(f"✅ ffmpeg 재인코딩 완료: {original_size} bytes -> {new_size} bytes")
-            else:
-                print(f"⚠️ ffmpeg 재인코딩 실패 (원본 파일 사용)")
-                print(f"   Return code: {result.returncode}")
-                print(f"   stdout: {result.stdout[-500:] if result.stdout else 'None'}")
-                print(f"   stderr: {result.stderr[-500:] if result.stderr else 'None'}")
-                if os.path.exists(temp_output):
-                    os.remove(temp_output)
-        except FileNotFoundError:
-            print(f"⚠️ ffmpeg가 설치되지 않음 (원본 파일 사용)")
-            if os.path.exists(temp_output):
-                os.remove(temp_output)
-        except subprocess.TimeoutExpired:
-            print(f"⚠️ ffmpeg 재인코딩 타임아웃 (원본 파일 사용)")
-            if os.path.exists(temp_output):
-                os.remove(temp_output)
-        except Exception as e:
-            print(f"⚠️ ffmpeg 재인코딩 중 오류 (원본 파일 사용): {e}")
-            import traceback
-            print(traceback.format_exc())
-            if os.path.exists(temp_output):
-                os.remove(temp_output)
 
     if (not os.path.exists(output_path)) or os.path.getsize(output_path) == 0:
         raise RuntimeError("주석 영상 생성 실패(파일이 비어있음). ffmpeg/코덱 점검 필요.")
