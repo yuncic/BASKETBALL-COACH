@@ -5,7 +5,7 @@ import base64
 import urllib.parse
 import traceback
 from pathlib import Path
-from fastapi import APIRouter, File, UploadFile, Query, HTTPException
+from fastapi import APIRouter, File, UploadFile, Query, HTTPException, Request
 from fastapi.responses import Response, JSONResponse
 
 from app.services.analyze_service import analyze_video_from_path
@@ -19,16 +19,22 @@ async def options_report():
 
 
 @router.post("/analyze")
-async def analyze(file: UploadFile = File(...)):
+async def analyze(request: Request, file: UploadFile = File(...)):
     """비디오 파일을 업로드하고 분석하여 결과 비디오와 리포트를 반환"""
     in_path = None
     out_path = None
     report_path = None
     
     try:
+        # User-Agent로 모바일 감지
+        user_agent = request.headers.get("user-agent", "").lower() if request else ""
+        is_mobile = any(keyword in user_agent for keyword in ["mobile", "android", "iphone", "ipad", "ipod"])
+        
         suffix = Path(file.filename).suffix if file.filename else ".mp4"
         in_path = tempfile.NamedTemporaryFile(delete=False, suffix=suffix).name
         print(f"📁 입력 파일 저장: {in_path}")
+        print(f"📱 User-Agent: {user_agent[:100] if user_agent else 'None'}")
+        print(f"📱 모바일 감지: {is_mobile}")
         
         with open(in_path, "wb") as f:
             content = await file.read()
@@ -38,7 +44,7 @@ async def analyze(file: UploadFile = File(...)):
         out_path = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4").name
         print(f"🔍 영상 분석 시작: {in_path} -> {out_path}")
         
-        report = analyze_video_from_path(in_path, out_path)
+        report = analyze_video_from_path(in_path, out_path, is_mobile=is_mobile)
         print("🧩 report 결과:", json.dumps(report, ensure_ascii=False, indent=2))
 
         if not os.path.exists(out_path) or os.path.getsize(out_path) == 0:

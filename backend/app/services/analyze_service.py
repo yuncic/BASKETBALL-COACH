@@ -454,7 +454,8 @@ def analyze_video_from_path(
     input_path: str,
     output_path: str,
     font_path: str = DEFAULT_FONT,
-    slow_factor: float = SLOW_FACTOR
+    slow_factor: float = SLOW_FACTOR,
+    is_mobile: bool = False
 ):
     """
     '원본 분석 로직'을 그대로 보존한 형태로 함수화.
@@ -486,11 +487,11 @@ def analyze_video_from_path(
     
     print(f"📐 비디오 크기: 보고된 크기 {W}x{H}, 실제 프레임 {actual_frame_w}x{actual_frame_h}")
     
-    # 모바일 세로 비디오 감지: 실제 프레임이 세로(H > W)이면 무조건 90도 시계방향 회전
+    # 모바일 비디오는 무조건 90도 시계방향 회전 (PC는 그대로)
     rotation_angle = 0
-    if actual_frame_h > actual_frame_w:
+    if is_mobile:
         rotation_angle = 90
-        print(f"📐 모바일 세로 비디오 감지 ({actual_frame_w}x{actual_frame_h}) → 90도 시계방향 회전")
+        print(f"📐 모바일 비디오 감지 → 무조건 90도 시계방향 회전")
 
     time = []  # 초 단위
     knees = []
