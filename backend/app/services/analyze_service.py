@@ -476,25 +476,6 @@ def analyze_video_from_path(
     fps = fps_reported if (10.0 <= fps_reported <= 240.0) else 30.0
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    
-    # 첫 프레임을 읽어서 실제 프레임 크기 확인
-    ret, first_frame = cap.read()
-    if not ret:
-        raise RuntimeError("첫 프레임 읽기 실패")
-    actual_frame_h, actual_frame_w = first_frame.shape[:2]
-    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 첫 프레임으로 되돌리기
-    
-    print(f"📐 비디오 크기: 보고된 크기 {W}x{H}, 실제 프레임 {actual_frame_w}x{actual_frame_h}")
-    
-    # 모바일 세로 영상 감지: 실제 프레임이 세로(H > W)인 경우 90도 회전
-    # PC에서는 세로 영상도 YOLO가 자동으로 640x384로 분석하지만,
-    # 모바일에서는 프레임을 회전시켜야 PC와 동일하게 처리됨
-    rotation_angle = 0
-    if actual_frame_h > actual_frame_w:
-        rotation_angle = 90
-        print(f"📐 모바일 세로 영상 감지 ({actual_frame_w}x{actual_frame_h}) → 90도 회전하여 {actual_frame_h}x{actual_frame_w}로 변환")
-    else:
-        print(f"📐 가로 영상 또는 회전 불필요 ({actual_frame_w}x{actual_frame_h})")
 
     time = []  # 초 단위
     knees = []
@@ -509,27 +490,16 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
-        
-        # 모바일 세로 영상인 경우 프레임 회전 (PC와 동일하게 처리)
-        if rotation_angle == 90:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-            # 첫 프레임에서만 회전 후 크기 확인 로그 출력
-            if len(time) == 0:
-                rotated_h, rotated_w = frame.shape[:2]
-                print(f"📐 회전 적용됨: 프레임 크기 {rotated_w}x{rotated_h}")
-        
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
 
-        # PC와 동일하게 640x384로 분석하기 위해 imgsz 명시적 지정
-        # imgsz=640은 가로 비율을 유지하면서 최대 크기를 640으로 설정
-        pose_out = pose_model(frame, imgsz=640)
+        pose_out = pose_model(frame)
         pose = pose_out[0]
         kp = None
         if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
             kp = pose.keypoints.xy[0].cpu().numpy()
 
-        det = det_model(frame, imgsz=640)[0]
+        det = det_model(frame)[0]
         bxy = None
         if det and det.boxes is not None and len(det.boxes) > 0:
             best_conf = -1.0
@@ -838,33 +808,19 @@ def analyze_video_from_path(
 
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
-    
-    # 회전 후 출력 크기 결정
-    if rotation_angle == 90:
-        output_width, output_height = H, W  # 가로/세로 교체
-    else:
-        output_width, output_height = W, H
-    
     # Docker 환경 호환성을 위해 mp4v를 먼저 시도, 실패 시 XVID 폴백
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
+    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
     if not out.isOpened():
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
-        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
+        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
         if not out.isOpened():
             raise RuntimeError(f"VideoWriter 초기화 실패: mp4v와 XVID 모두 실패")
-    
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        
-        # 모바일 세로 영상인 경우 프레임 회전 (PC와 동일하게 처리)
-        if rotation_angle == 90:
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-        
-        # PC와 동일하게 640x384로 분석하기 위해 imgsz 명시적 지정
-        pose_out = pose_model(frame, imgsz=640)
+        pose_out = pose_model(frame)
         pose = pose_out[0]
         annotated = pose.plot()
         annotated = draw_panel(annotated, lines, font_path)
