@@ -476,6 +476,21 @@ def analyze_video_from_path(
     fps = fps_reported if (10.0 <= fps_reported <= 240.0) else 30.0
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # 첫 프레임을 읽어서 실제 프레임 크기 확인
+    ret, first_frame = cap.read()
+    if not ret:
+        raise RuntimeError("첫 프레임 읽기 실패")
+    actual_frame_h, actual_frame_w = first_frame.shape[:2]
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 첫 프레임으로 되돌리기
+    
+    # 모바일 세로 영상 감지: 실제 프레임이 세로(H > W)인 경우 90도 회전
+    # PC에서는 세로 영상도 YOLO가 자동으로 640x384로 분석하지만,
+    # 모바일에서는 프레임을 회전시켜야 PC와 동일하게 처리됨
+    rotation_angle = 0
+    if actual_frame_h > actual_frame_w:
+        rotation_angle = 90
+        print(f"📐 모바일 세로 영상 감지 ({actual_frame_w}x{actual_frame_h}) → 90도 회전하여 {actual_frame_h}x{actual_frame_w}로 변환")
 
     time = []  # 초 단위
     knees = []
@@ -490,6 +505,10 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
+        
+        # 모바일 세로 영상인 경우 프레임 회전 (PC와 동일하게 처리)
+        if rotation_angle == 90:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
@@ -809,16 +828,29 @@ def analyze_video_from_path(
 
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
+    
+    # 회전 후 출력 크기 결정
+    if rotation_angle == 90:
+        output_width, output_height = H, W  # 가로/세로 교체
+    else:
+        output_width, output_height = W, H
+    
     # H.264 컨테이너 호환성 좋게 avc1 시도, 실패 시 mp4v 폴백
     fourcc = cv2.VideoWriter_fourcc(*"avc1")
-    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
     if not out.isOpened():
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
+    
     while True:
         ret, frame = cap.read()
         if not ret:
             break
+        
+        # 모바일 세로 영상인 경우 프레임 회전 (PC와 동일하게 처리)
+        if rotation_angle == 90:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        
         pose_out = pose_model(frame)
         pose = pose_out[0]
         annotated = pose.plot()
