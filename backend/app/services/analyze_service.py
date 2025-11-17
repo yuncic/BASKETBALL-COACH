@@ -484,6 +484,8 @@ def analyze_video_from_path(
     actual_frame_h, actual_frame_w = first_frame.shape[:2]
     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 첫 프레임으로 되돌리기
     
+    print(f"📐 비디오 크기: 보고된 크기 {W}x{H}, 실제 프레임 {actual_frame_w}x{actual_frame_h}")
+    
     # 모바일 세로 영상 감지: 실제 프레임이 세로(H > W)인 경우 90도 회전
     # PC에서는 세로 영상도 YOLO가 자동으로 640x384로 분석하지만,
     # 모바일에서는 프레임을 회전시켜야 PC와 동일하게 처리됨
@@ -491,6 +493,8 @@ def analyze_video_from_path(
     if actual_frame_h > actual_frame_w:
         rotation_angle = 90
         print(f"📐 모바일 세로 영상 감지 ({actual_frame_w}x{actual_frame_h}) → 90도 회전하여 {actual_frame_h}x{actual_frame_w}로 변환")
+    else:
+        print(f"📐 가로 영상 또는 회전 불필요 ({actual_frame_w}x{actual_frame_h})")
 
     time = []  # 초 단위
     knees = []
@@ -509,6 +513,10 @@ def analyze_video_from_path(
         # 모바일 세로 영상인 경우 프레임 회전 (PC와 동일하게 처리)
         if rotation_angle == 90:
             frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+            # 첫 프레임에서만 회전 후 크기 확인 로그 출력
+            if len(time) == 0:
+                rotated_h, rotated_w = frame.shape[:2]
+                print(f"📐 회전 적용됨: 프레임 크기 {rotated_w}x{rotated_h}")
         
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
@@ -835,12 +843,14 @@ def analyze_video_from_path(
     else:
         output_width, output_height = W, H
     
-    # H.264 컨테이너 호환성 좋게 avc1 시도, 실패 시 mp4v 폴백
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    # Docker 환경 호환성을 위해 mp4v를 먼저 시도, 실패 시 XVID 폴백
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
     if not out.isOpened():
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter_fourcc(*"XVID")
         out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
+        if not out.isOpened():
+            raise RuntimeError(f"VideoWriter 초기화 실패: mp4v와 XVID 모두 실패")
     
     while True:
         ret, frame = cap.read()
