@@ -505,14 +505,13 @@ def analyze_video_from_path(
             ret, test_frame = cap.read()
             if ret:
                 frame_h, frame_w = test_frame.shape[:2]
-                # 실제 프레임이 가로로 눕혀져 있으면 회전 필요
+                # 실제 프레임 크기는 세로(384x640)이지만, 내용이 회전되어 있을 수 있음
                 # 모바일에서 세로 촬영 시 보통 왼쪽으로 90도 회전되어 저장됨
                 # 따라서 오른쪽으로 90도 회전 (시계 방향) 필요
-                if frame_w > frame_h:  # 실제 프레임이 가로로 눕혀져 있음
-                    rotation_angle = 90  # 오른쪽으로 90도 회전 (시계 방향)
-                    print(f"📐 세로 영상 감지 ({W}x{H}), 실제 프레임 ({frame_w}x{frame_h}): 90도 회전 적용")
-                else:
-                    print(f"📐 세로 영상 감지 ({W}x{H}), 실제 프레임 ({frame_w}x{frame_h}): 회전 불필요")
+                # 프레임 크기가 같아도 내용이 회전되어 있으면 회전 필요
+                # 세로 영상이면 무조건 오른쪽으로 90도 회전 시도 (모바일 촬영 패턴)
+                rotation_angle = 90  # 오른쪽으로 90도 회전 (시계 방향)
+                print(f"📐 세로 영상 감지 ({W}x{H}), 실제 프레임 ({frame_w}x{frame_h}): 모바일 촬영 패턴으로 90도 회전 적용")
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 첫 프레임으로 되돌리기
         
         # 원본 비디오에 회전 메타데이터가 있으면 ffmpeg로 제거해야 함
