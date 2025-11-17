@@ -468,6 +468,15 @@ def analyze_video_from_path(
     pose_model, det_model = _get_models()
 
     # ---------- Pass1: 포즈 & 공 궤적 ----------
+    cap = cv2.VideoCapture(input_path)
+    if not cap.isOpened():
+        raise RuntimeError(f"영상 열기 실패: {input_path}")
+
+    fps_reported = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    fps = fps_reported if (10.0 <= fps_reported <= 240.0) else 30.0
+    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
     # 원본 비디오의 회전 메타데이터 확인 (ffprobe 사용)
     rotation_angle = 0
     try:
@@ -489,33 +498,18 @@ def analyze_video_from_path(
                 except ValueError:
                     pass
         
-        # 회전 메타데이터가 없어도 실제 프레임 크기로 판단
+        # 회전 메타데이터가 없어도 세로 영상이면 회전 처리
         if rotation_angle == 0:
-            # 첫 프레임을 읽어서 크기 확인
-            test_cap = cv2.VideoCapture(input_path)
-            if test_cap.isOpened():
-                ret, test_frame = test_cap.read()
-                if ret:
-                    frame_h, frame_w = test_frame.shape[:2]
-                    reported_w = int(test_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                    reported_h = int(test_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    # 실제 프레임 크기와 보고된 크기가 다르면 회전 가능성
-                    if frame_w != reported_w or frame_h != reported_h:
-                        print(f"⚠️ 프레임 크기 불일치: 보고됨={reported_w}x{reported_h}, 실제={frame_w}x{frame_h}")
-                test_cap.release()
+            # 세로 영상 (height > width)이고 모바일에서 업로드된 경우
+            # 모바일에서 세로로 촬영하면 보통 왼쪽으로 90도 회전되어 저장됨
+            if H > W:
+                # 세로 영상이면 자동으로 오른쪽으로 90도 회전 (왼쪽 회전 보정)
+                rotation_angle = 270  # 270도 = 오른쪽으로 90도 = 왼쪽 회전 보정
+                print(f"📐 세로 영상 감지 ({W}x{H}): 자동으로 270도 회전 적용 (왼쪽 회전 보정)")
     except Exception as e:
         print(f"⚠️ 회전 정보 확인 실패: {e}")
         import traceback
         print(traceback.format_exc())
-    
-    cap = cv2.VideoCapture(input_path)
-    if not cap.isOpened():
-        raise RuntimeError(f"영상 열기 실패: {input_path}")
-
-    fps_reported = cap.get(cv2.CAP_PROP_FPS) or 0.0
-    fps = fps_reported if (10.0 <= fps_reported <= 240.0) else 30.0
-    W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     time = []  # 초 단위
     knees = []
