@@ -477,7 +477,35 @@ def analyze_video_from_path(
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    # 원본 비디오 그대로 사용 (회전 처리 없음)
+    # 원본 비디오의 회전 메타데이터 확인 (ffprobe 사용)
+    rotation_angle = 0
+    try:
+        import subprocess
+        # ffprobe로 회전 메타데이터 확인
+        probe_cmds = [
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "side_data=rotation", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
+            ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream_tags=rotate", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
+            ["ffprobe", "-v", "error", "-show_entries", "format_tags=rotate", "-of", "default=noprint_wrappers=1:nokey=1", input_path],
+        ]
+        for probe_cmd in probe_cmds:
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0 and result.stdout.strip():
+                try:
+                    rotation_angle = int(result.stdout.strip())
+                    if rotation_angle != 0:
+                        print(f"📐 원본 비디오 회전 메타데이터: {rotation_angle}도")
+                        break
+                except ValueError:
+                    pass
+        
+        if rotation_angle == 0:
+            print(f"📐 회전 메타데이터 없음 ({W}x{H})")
+    except Exception as e:
+        print(f"⚠️ 회전 정보 확인 실패: {e}")
+    
+    # 회전 각도 정규화 (90, 180, 270만 처리)
+    if rotation_angle not in [0, 90, 180, 270]:
+        rotation_angle = 0
 
     time = []  # 초 단위
     knees = []
@@ -492,6 +520,14 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
+        
+        # 회전 메타데이터가 있으면 프레임 회전 (분석을 위해)
+        if rotation_angle == 90:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        elif rotation_angle == 180:
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
+        elif rotation_angle == 270:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
@@ -812,13 +848,18 @@ def analyze_video_from_path(
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
     
+    # 회전 후 출력 크기 결정
+    if rotation_angle in [90, 270]:
+        output_width, output_height = H, W  # 가로/세로 교체
+    else:
+        output_width, output_height = W, H
+    
     # Docker 환경 호환성을 위해 mp4v 먼저 시도, 실패 시 avc1 폴백
-    # (원래 코드는 avc1 먼저였지만 Docker에서 작동하지 않을 수 있음)
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
     if not out.isOpened():
         fourcc = cv2.VideoWriter_fourcc(*"avc1")
-        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
         if not out.isOpened():
             raise RuntimeError("비디오 코덱 초기화 실패. mp4v, avc1 모두 실패")
 
@@ -826,6 +867,14 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
+        
+        # 회전 메타데이터가 있으면 프레임 회전 (출력 비디오에 반영)
+        if rotation_angle == 90:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        elif rotation_angle == 180:
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
+        elif rotation_angle == 270:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
         pose_out = pose_model(frame)
         pose = pose_out[0]
@@ -847,18 +896,19 @@ def analyze_video_from_path(
             print(f"🔄 ffmpeg 재인코딩 시작: {output_path} -> {temp_output}")
             
             # ffmpeg로 H.264 코덱으로 재인코딩
-            # -noautorotate: 입력의 회전 메타데이터 무시하고 프레임 그대로 사용
-            # -metadata rotate=: 모든 회전 메타데이터 제거 (모바일 브라우저 자동 회전 방지)
+            # 프레임은 이미 회전되어 있으므로, 회전 메타데이터만 제거하면 됨
+            # -map_metadata -1: 모든 메타데이터 제거
+            # -metadata rotate=: 회전 메타데이터 명시적으로 제거
             ffmpeg_cmd = [
-                "ffmpeg", "-y", "-i", output_path,
-                "-noautorotate",  # 회전 메타데이터 무시, 프레임 그대로 사용
+                "ffmpeg", "-y",
+                "-i", output_path,
                 "-c:v", "libx264",  # H.264 코덱 (브라우저 호환성 최대)
                 "-preset", "fast",
                 "-crf", "23",
                 "-pix_fmt", "yuv420p",  # 브라우저 호환성 필수
                 "-movflags", "+faststart",  # 웹 스트리밍 최적화
-                "-metadata:s:v:0", "rotate=0",  # 비디오 스트림 회전 메타데이터 제거
-                "-metadata", "rotate=",  # 전체 파일 회전 메타데이터 제거
+                "-map_metadata", "-1",  # 모든 메타데이터 제거
+                "-metadata", "rotate=",  # 회전 메타데이터 명시적으로 제거
                 "-an",  # 오디오 제거
                 "-f", "mp4",
                 temp_output
@@ -875,8 +925,10 @@ def analyze_video_from_path(
             else:
                 print(f"⚠️ ffmpeg 재인코딩 실패 (원본 파일 사용)")
                 print(f"   Return code: {result.returncode}")
+                if result.stdout:
+                    print(f"   stdout: {result.stdout[-1000:]}")
                 if result.stderr:
-                    print(f"   stderr: {result.stderr[-500:]}")
+                    print(f"   stderr: {result.stderr[-1000:]}")
                 if os.path.exists(temp_output):
                     os.remove(temp_output)
         except FileNotFoundError:
