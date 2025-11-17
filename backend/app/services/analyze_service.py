@@ -521,13 +521,15 @@ def analyze_video_from_path(
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
 
-        pose_out = pose_model(frame)
+        # PC와 동일하게 640x384로 분석하기 위해 imgsz 명시적 지정
+        # imgsz=640은 가로 비율을 유지하면서 최대 크기를 640으로 설정
+        pose_out = pose_model(frame, imgsz=640)
         pose = pose_out[0]
         kp = None
         if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
             kp = pose.keypoints.xy[0].cpu().numpy()
 
-        det = det_model(frame)[0]
+        det = det_model(frame, imgsz=640)[0]
         bxy = None
         if det and det.boxes is not None and len(det.boxes) > 0:
             best_conf = -1.0
@@ -861,7 +863,8 @@ def analyze_video_from_path(
         if rotation_angle == 90:
             frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         
-        pose_out = pose_model(frame)
+        # PC와 동일하게 640x384로 분석하기 위해 imgsz 명시적 지정
+        pose_out = pose_model(frame, imgsz=640)
         pose = pose_out[0]
         annotated = pose.plot()
         annotated = draw_panel(annotated, lines, font_path)
