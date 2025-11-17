@@ -477,10 +477,7 @@ def analyze_video_from_path(
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    # 회전 메타데이터를 무시하고 원본 프레임 그대로 사용
-    # PC/모바일 모두 원본 그대로 업로드되도록 처리
-    rotation_angle = 0
-    print(f"📐 원본 비디오 그대로 사용 ({W}x{H}): 회전 처리 없음")
+    # 원본 비디오 그대로 사용 (회전 처리 없음)
 
     time = []  # 초 단위
     knees = []
@@ -495,16 +492,6 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
-        
-        # 원본 비디오가 회전 메타데이터를 가지고 있거나 세로 영상이 회전되어 있으면 프레임 회전
-        if rotation_angle == 90:
-            # 오른쪽으로 90도 = 시계 방향으로 90도
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
-        elif rotation_angle == 180:
-            frame = cv2.rotate(frame, cv2.ROTATE_180)
-        elif rotation_angle == 270:
-            # 왼쪽으로 90도 = 반시계 방향으로 90도
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
@@ -825,12 +812,15 @@ def analyze_video_from_path(
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
     
-    # H.264 컨테이너 호환성 좋게 avc1 시도, 실패 시 mp4v 폴백
-    fourcc = cv2.VideoWriter_fourcc(*"avc1")
+    # Docker 환경 호환성을 위해 mp4v 먼저 시도, 실패 시 avc1 폴백
+    # (원래 코드는 avc1 먼저였지만 Docker에서 작동하지 않을 수 있음)
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
     if not out.isOpened():
-        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        fourcc = cv2.VideoWriter_fourcc(*"avc1")
         out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+        if not out.isOpened():
+            raise RuntimeError("비디오 코덱 초기화 실패. mp4v, avc1 모두 실패")
 
     while True:
         ret, frame = cap.read()
