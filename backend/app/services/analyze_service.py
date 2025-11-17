@@ -476,6 +476,12 @@ def analyze_video_from_path(
     fps = fps_reported if (10.0 <= fps_reported <= 240.0) else 30.0
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    # 모바일 세로 비디오 감지: H > W이면 무조건 90도 시계방향 회전
+    rotation_angle = 0
+    if H > W:
+        rotation_angle = 90
+        print(f"📐 모바일 세로 비디오 감지 ({W}x{H}) → 90도 시계방향 회전")
 
     time = []  # 초 단위
     knees = []
@@ -490,6 +496,15 @@ def analyze_video_from_path(
         ret, frame = cap.read()
         if not ret:
             break
+        
+        # 회전 메타데이터가 있으면 프레임 회전
+        if rotation_angle == 90:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        elif rotation_angle == 180:
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
+        elif rotation_angle == 270:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
 
@@ -808,18 +823,35 @@ def analyze_video_from_path(
 
     # ---------- Pass2 렌더링 ----------
     cap = cv2.VideoCapture(input_path)
+    
+    # 회전 후 출력 크기 결정
+    if rotation_angle in [90, 270]:
+        output_width, output_height = H, W  # 가로/세로 교체
+    else:
+        output_width, output_height = W, H
+    
     # Docker 환경 호환성을 위해 mp4v를 먼저 시도, 실패 시 XVID 폴백
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+    out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
     if not out.isOpened():
         fourcc = cv2.VideoWriter_fourcc(*"XVID")
-        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (int(cap.get(3)), int(cap.get(4))))
+        out = cv2.VideoWriter(output_path, fourcc, max(fps * slow_factor, 1.0), (output_width, output_height))
         if not out.isOpened():
             raise RuntimeError(f"VideoWriter 초기화 실패: mp4v와 XVID 모두 실패")
+    
     while True:
         ret, frame = cap.read()
         if not ret:
             break
+        
+        # 회전 메타데이터가 있으면 프레임 회전
+        if rotation_angle == 90:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        elif rotation_angle == 180:
+            frame = cv2.rotate(frame, cv2.ROTATE_180)
+        elif rotation_angle == 270:
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        
         pose_out = pose_model(frame)
         pose = pose_out[0]
         annotated = pose.plot()
