@@ -498,8 +498,22 @@ def analyze_video_from_path(
                 except ValueError:
                     pass
         
-        # 회전 메타데이터가 없으면 회전하지 않음 (원본 그대로 사용)
-        if rotation_angle == 0:
+        # 회전 메타데이터가 없어도 세로 영상이면 실제 프레임 확인
+        if rotation_angle == 0 and H > W:
+            # 세로 영상: 첫 프레임을 읽어서 실제 방향 확인
+            ret, test_frame = cap.read()
+            if ret:
+                frame_h, frame_w = test_frame.shape[:2]
+                # 실제 프레임이 가로로 눕혀져 있으면 회전 필요
+                # 모바일에서 세로 촬영 시 보통 왼쪽으로 90도 회전되어 저장됨
+                # 따라서 오른쪽으로 90도 회전 (시계 방향) 필요
+                if frame_w > frame_h:  # 실제 프레임이 가로로 눕혀져 있음
+                    rotation_angle = 90  # 오른쪽으로 90도 회전 (시계 방향)
+                    print(f"📐 세로 영상 감지 ({W}x{H}), 실제 프레임 ({frame_w}x{frame_h}): 90도 회전 적용")
+                else:
+                    print(f"📐 세로 영상 감지 ({W}x{H}), 실제 프레임 ({frame_w}x{frame_h}): 회전 불필요")
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 첫 프레임으로 되돌리기
+        elif rotation_angle == 0:
             print(f"📐 회전 메타데이터 없음 ({W}x{H}): 원본 그대로 사용")
     except Exception as e:
         print(f"⚠️ 회전 정보 확인 실패: {e}")
@@ -520,16 +534,15 @@ def analyze_video_from_path(
         if not ret:
             break
         
-        # 원본 비디오가 회전 메타데이터를 가지고 있다면 프레임을 실제로 회전
-        # 모바일에서 "왼쪽으로 90도"는 실제로는 오른쪽으로 90도 회전 필요
+        # 원본 비디오가 회전 메타데이터를 가지고 있거나 세로 영상이 회전되어 있으면 프레임 회전
         if rotation_angle == 90:
-            # 왼쪽으로 90도 = 오른쪽으로 270도 = 반시계 방향으로 90도
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            # 오른쪽으로 90도 = 시계 방향으로 90도
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         elif rotation_angle == 180:
             frame = cv2.rotate(frame, cv2.ROTATE_180)
         elif rotation_angle == 270:
-            # 오른쪽으로 90도 = 시계 방향으로 90도
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+            # 왼쪽으로 90도 = 반시계 방향으로 90도
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
@@ -868,16 +881,15 @@ def analyze_video_from_path(
         if not ret:
             break
         
-        # 원본 비디오가 회전 메타데이터를 가지고 있다면 프레임을 실제로 회전
-        # 모바일에서 "왼쪽으로 90도"는 실제로는 오른쪽으로 90도 회전 필요
+        # 원본 비디오가 회전 메타데이터를 가지고 있거나 세로 영상이 회전되어 있으면 프레임 회전
         if rotation_angle == 90:
-            # 왼쪽으로 90도 = 오른쪽으로 270도 = 반시계 방향으로 90도
-            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+            # 오른쪽으로 90도 = 시계 방향으로 90도
+            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         elif rotation_angle == 180:
             frame = cv2.rotate(frame, cv2.ROTATE_180)
         elif rotation_angle == 270:
-            # 오른쪽으로 90도 = 시계 방향으로 90도
-            frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+            # 왼쪽으로 90도 = 반시계 방향으로 90도
+            frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
         pose_out = pose_model(frame)
         pose = pose_out[0]
