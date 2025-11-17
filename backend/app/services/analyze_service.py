@@ -501,6 +501,8 @@ def analyze_video_from_path(
     wrists = []
     balls = []
     kps = []
+    # Pass2에서 재사용하기 위해 포즈 결과 저장 (프레임은 메모리 절약을 위해 저장하지 않음)
+    pose_results_for_pass2 = []
 
     while True:
         ret, frame = cap.read()
@@ -518,8 +520,13 @@ def analyze_video_from_path(
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
 
+        # YOLO 추론 (Pass1)
         pose_out = pose_model(frame)
         pose = pose_out[0]
+        
+        # Pass2에서 재사용하기 위해 저장 (메모리 절약: 프레임은 저장하지 않고 포즈 결과만 저장)
+        pose_results_for_pass2.append(pose)
+        
         kp = None
         if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
             kp = pose.keypoints.xy[0].cpu().numpy()
@@ -832,7 +839,7 @@ def analyze_video_from_path(
     ]
 
     # ---------- Pass2 렌더링 ----------
-    cap = cv2.VideoCapture(input_path)
+    # Pass1에서 이미 분석한 결과를 재사용하여 YOLO 추론 중복 제거
     
     # 회전 후 출력 크기 결정
     if rotation_angle in [90, 270]:
@@ -849,8 +856,12 @@ def analyze_video_from_path(
         if not out.isOpened():
             raise RuntimeError(f"VideoWriter 초기화 실패: mp4v와 XVID 모두 실패")
     
+    # Pass2: 비디오를 다시 읽어서 Pass1에서 분석한 포즈 결과 재사용 (YOLO 추론 중복 제거)
+    cap2 = cv2.VideoCapture(input_path)
+    pose_idx = 0
+    
     while True:
-        ret, frame = cap.read()
+        ret, frame = cap2.read()
         if not ret:
             break
         
@@ -862,14 +873,27 @@ def analyze_video_from_path(
         elif rotation_angle == 270:
             frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
-        pose_out = pose_model(frame)
-        pose = pose_out[0]
-        annotated = pose.plot()
-        annotated = draw_panel(annotated, lines, font_path)
-        out.write(annotated)
+        # Pass1에서 분석한 포즈 결과 재사용 (YOLO 추론 중복 제거)
+        if pose_idx < len(pose_results_for_pass2):
+            pose = pose_results_for_pass2[pose_idx]
+            annotated = pose.plot()
+            annotated = draw_panel(annotated, lines, font_path)
+            out.write(annotated)
+            pose_idx += 1
+        else:
+            # 예외 상황: 프레임 수가 맞지 않으면 새로 분석
+            pose_out = pose_model(frame)
+            pose = pose_out[0]
+            annotated = pose.plot()
+            annotated = draw_panel(annotated, lines, font_path)
+            out.write(annotated)
 
-    cap.release()
+    cap2.release()
     out.release()
+    
+    # 메모리 정리
+    del pose_results_for_pass2
+    gc.collect()
 
     if (not os.path.exists(output_path)) or os.path.getsize(output_path) == 0:
         raise RuntimeError("주석 영상 생성 실패(파일이 비어있음). ffmpeg/코덱 점검 필요.")
