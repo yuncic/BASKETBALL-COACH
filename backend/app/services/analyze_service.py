@@ -477,6 +477,15 @@ def analyze_video_from_path(
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
+    # 첫 프레임을 읽어서 실제 프레임 크기 확인
+    ret, first_frame = cap.read()
+    if not ret:
+        raise RuntimeError("첫 프레임 읽기 실패")
+    actual_frame_h, actual_frame_w = first_frame.shape[:2]
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 첫 프레임으로 되돌리기
+    
+    print(f"📐 비디오 크기: 보고된 크기 {W}x{H}, 실제 프레임 {actual_frame_w}x{actual_frame_h}")
+    
     # 원본 비디오의 회전 메타데이터 확인 (ffprobe 사용)
     rotation_angle = 0
     try:
@@ -500,14 +509,13 @@ def analyze_video_from_path(
     except Exception as e:
         print(f"⚠️ 회전 메타데이터 확인 실패: {e}")
     
-    # 세로 영상(H > W)인 경우 무조건 90도 회전하여 PC와 동일하게 처리
+    # 실제 프레임이 세로(actual_frame_h > actual_frame_w)인 경우 90도 회전
     # 모바일에서 업로드된 세로 영상(384x640)을 가로 영상(640x384)으로 변환
-    # (회전 메타데이터 확인과 독립적으로 실행)
-    if rotation_angle == 0 and H > W:
+    if rotation_angle == 0 and actual_frame_h > actual_frame_w:
         rotation_angle = 90
-        print(f"📐 세로 영상 감지 ({W}x{H}) → 90도 회전하여 640x384로 변환")
+        print(f"📐 세로 영상 감지 (실제 프레임 {actual_frame_w}x{actual_frame_h}) → 90도 회전하여 {actual_frame_h}x{actual_frame_w}로 변환")
     elif rotation_angle == 0:
-        print(f"📐 회전 없음 ({W}x{H})")
+        print(f"📐 회전 없음 (실제 프레임 {actual_frame_w}x{actual_frame_h})")
     
     # 회전 각도 정규화 (90, 180, 270만 처리)
     if rotation_angle not in [0, 90, 180, 270]:
