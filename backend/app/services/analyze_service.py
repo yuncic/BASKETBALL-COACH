@@ -527,15 +527,10 @@ def analyze_video_from_path(
     else:
         final_frame_w, final_frame_h = actual_frame_w, actual_frame_h
     
-    # YOLO 모델 입력 크기: 가로 비율로 고정 (640x384)
-    # 세로 비율이면 강제로 가로 비율로 변환
-    yolo_imgsz = 640  # YOLO 기본 입력 크기
-    if final_frame_h > final_frame_w:
-        # 세로 비율이면 가로 비율로 강제 변환
-        yolo_imgsz = (640, 384)  # (width, height) 튜플로 명시적 지정
-        print(f"📐 YOLO 입력 크기 강제 설정: {yolo_imgsz} (가로 비율)")
-    else:
-        print(f"📐 YOLO 입력 크기: {yolo_imgsz} (자동)")
+    # YOLO 모델 입력 크기: 항상 가로 비율로 고정 (640x384)
+    # PC와 모바일 모두 동일한 가로 비율로 분석하여 일관성 유지
+    yolo_imgsz = (640, 384)  # (width, height) 튜플로 명시적 지정 - 가로 비율 강제
+    print(f"📐 YOLO 입력 크기 강제 설정: {yolo_imgsz} (가로 비율 640x384)")
 
     time = []  # 초 단위
     knees = []
