@@ -529,8 +529,8 @@ def analyze_video_from_path(
     
     # YOLO 모델 입력 크기: 항상 가로 비율로 고정 (640x384)
     # PC와 모바일 모두 동일한 가로 비율로 분석하여 일관성 유지
-    yolo_imgsz = (640, 384)  # (width, height) 튜플로 명시적 지정 - 가로 비율 강제
-    print(f"📐 YOLO 입력 크기 강제 설정: {yolo_imgsz} (가로 비율 640x384)")
+    yolo_target_size = (640, 384)  # (width, height) - 가로 비율 강제
+    print(f"📐 YOLO 입력 크기 강제 설정: {yolo_target_size} (가로 비율 640x384)")
 
     time = []  # 초 단위
     knees = []
@@ -554,18 +554,27 @@ def analyze_video_from_path(
         elif rotation_angle == 270:
             frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
+        # 프레임을 640x384로 리사이즈하여 YOLO에 전달 (가로 비율 강제)
+        frame_resized = cv2.resize(frame, yolo_target_size, interpolation=cv2.INTER_LINEAR)
+        
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
 
-        # YOLO 모델에 명시적 입력 크기 지정 (가로 비율 강제)
-        pose_out = pose_model(frame, imgsz=yolo_imgsz)
+        # 리사이즈된 프레임을 YOLO 모델에 전달
+        pose_out = pose_model(frame_resized)
         pose = pose_out[0]
         kp = None
         if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
-            kp = pose.keypoints.xy[0].cpu().numpy()
+            # 키포인트 좌표를 원본 프레임 크기로 스케일링
+            kp_resized = pose.keypoints.xy[0].cpu().numpy()
+            scale_x = final_frame_w / yolo_target_size[0]
+            scale_y = final_frame_h / yolo_target_size[1]
+            kp = kp_resized.copy()
+            kp[:, 0] *= scale_x
+            kp[:, 1] *= scale_y
 
-        # YOLO 모델에 명시적 입력 크기 지정 (가로 비율 강제)
-        det = det_model(frame, imgsz=yolo_imgsz)[0]
+        # 리사이즈된 프레임을 YOLO 모델에 전달
+        det = det_model(frame_resized)[0]
         bxy = None
         if det and det.boxes is not None and len(det.boxes) > 0:
             best_conf = -1.0
@@ -576,9 +585,16 @@ def analyze_video_from_path(
                     name = ""
                 if ("ball" in name) and float(conf) >= CONF_BALL:
                     x1, y1, x2, y2 = xyxy.cpu().numpy()
+                    # 리사이즈된 좌표를 원본 프레임 크기로 스케일링
+                    scale_x = final_frame_w / yolo_target_size[0]
+                    scale_y = final_frame_h / yolo_target_size[1]
+                    x1_orig = x1 * scale_x
+                    y1_orig = y1 * scale_y
+                    x2_orig = x2 * scale_x
+                    y2_orig = y2 * scale_y
                     if float(conf) > best_conf:
                         best_conf = float(conf)
-                        bxy = ((x1 + x2) / 2, (y1 + y2) / 2)
+                        bxy = ((x1_orig + x2_orig) / 2, (y1_orig + y2_orig) / 2)
 
         if kp is None:
             knees.append(np.nan)
@@ -903,10 +919,17 @@ def analyze_video_from_path(
         elif rotation_angle == 270:
             frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
-        # YOLO 모델에 명시적 입력 크기 지정 (가로 비율 강제)
-        pose_out = pose_model(frame, imgsz=yolo_imgsz)
+        # 프레임을 640x384로 리사이즈하여 YOLO에 전달 (가로 비율 강제)
+        frame_resized = cv2.resize(frame, yolo_target_size, interpolation=cv2.INTER_LINEAR)
+        
+        # 리사이즈된 프레임을 YOLO 모델에 전달
+        pose_out = pose_model(frame_resized)
         pose = pose_out[0]
+        
+        # 결과를 원본 프레임 크기로 스케일링하여 주석 추가
         annotated = pose.plot()
+        # 주석된 프레임을 원본 크기로 리사이즈
+        annotated = cv2.resize(annotated, (output_width, output_height), interpolation=cv2.INTER_LINEAR)
         annotated = draw_panel(annotated, lines, font_path)
         out.write(annotated)
 
