@@ -838,6 +838,59 @@ def analyze_video_from_path(
 
     if (not os.path.exists(output_path)) or os.path.getsize(output_path) == 0:
         raise RuntimeError("주석 영상 생성 실패(파일이 비어있음). ffmpeg/코덱 점검 필요.")
+    
+    # PC 브라우저 호환성 및 모바일 회전 문제 해결을 위해 ffmpeg로 H.264 재인코딩
+    temp_output = output_path + ".temp"
+    if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+        try:
+            import subprocess
+            print(f"🔄 ffmpeg 재인코딩 시작: {output_path} -> {temp_output}")
+            
+            # ffmpeg로 H.264 코덱으로 재인코딩
+            # -noautorotate: 입력의 회전 메타데이터 무시하고 프레임 그대로 사용
+            # -metadata rotate=: 모든 회전 메타데이터 제거 (모바일 브라우저 자동 회전 방지)
+            ffmpeg_cmd = [
+                "ffmpeg", "-y", "-i", output_path,
+                "-noautorotate",  # 회전 메타데이터 무시, 프레임 그대로 사용
+                "-c:v", "libx264",  # H.264 코덱 (브라우저 호환성 최대)
+                "-preset", "fast",
+                "-crf", "23",
+                "-pix_fmt", "yuv420p",  # 브라우저 호환성 필수
+                "-movflags", "+faststart",  # 웹 스트리밍 최적화
+                "-metadata:s:v:0", "rotate=0",  # 비디오 스트림 회전 메타데이터 제거
+                "-metadata", "rotate=",  # 전체 파일 회전 메타데이터 제거
+                "-an",  # 오디오 제거
+                "-f", "mp4",
+                temp_output
+            ]
+            
+            print(f"📋 ffmpeg 명령어: {' '.join(ffmpeg_cmd)}")
+            result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0 and os.path.exists(temp_output) and os.path.getsize(temp_output) > 0:
+                original_size = os.path.getsize(output_path)
+                new_size = os.path.getsize(temp_output)
+                os.replace(temp_output, output_path)
+                print(f"✅ ffmpeg 재인코딩 완료: {original_size} bytes -> {new_size} bytes")
+            else:
+                print(f"⚠️ ffmpeg 재인코딩 실패 (원본 파일 사용)")
+                print(f"   Return code: {result.returncode}")
+                if result.stderr:
+                    print(f"   stderr: {result.stderr[-500:]}")
+                if os.path.exists(temp_output):
+                    os.remove(temp_output)
+        except FileNotFoundError:
+            print(f"⚠️ ffmpeg가 설치되지 않음 (원본 파일 사용)")
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+        except subprocess.TimeoutExpired:
+            print(f"⚠️ ffmpeg 재인코딩 타임아웃 (원본 파일 사용)")
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
+        except Exception as e:
+            print(f"⚠️ ffmpeg 재인코딩 중 오류 (원본 파일 사용): {e}")
+            if os.path.exists(temp_output):
+                os.remove(temp_output)
 
     # ---------- 웹 패널용 리포트(영상 안 패널과 동일 정보) ----------
     report = {
