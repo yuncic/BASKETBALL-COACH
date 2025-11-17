@@ -477,11 +477,20 @@ def analyze_video_from_path(
     W = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     H = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
-    # 모바일 세로 비디오 감지: H > W이면 무조건 90도 시계방향 회전
+    # 첫 프레임을 읽어서 실제 프레임 크기 확인
+    ret, first_frame = cap.read()
+    if not ret:
+        raise RuntimeError("첫 프레임 읽기 실패")
+    actual_frame_h, actual_frame_w = first_frame.shape[:2]
+    cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # 첫 프레임으로 되돌리기
+    
+    print(f"📐 비디오 크기: 보고된 크기 {W}x{H}, 실제 프레임 {actual_frame_w}x{actual_frame_h}")
+    
+    # 모바일 세로 비디오 감지: 실제 프레임이 세로(H > W)이면 무조건 90도 시계방향 회전
     rotation_angle = 0
-    if H > W:
+    if actual_frame_h > actual_frame_w:
         rotation_angle = 90
-        print(f"📐 모바일 세로 비디오 감지 ({W}x{H}) → 90도 시계방향 회전")
+        print(f"📐 모바일 세로 비디오 감지 ({actual_frame_w}x{actual_frame_h}) → 90도 시계방향 회전")
 
     time = []  # 초 단위
     knees = []
