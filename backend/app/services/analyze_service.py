@@ -520,6 +520,22 @@ def analyze_video_from_path(
     # 회전 각도 정규화 (90, 180, 270만 처리)
     if rotation_angle not in [0, 90, 180, 270]:
         rotation_angle = 0
+    
+    # 회전 후 최종 프레임 크기 계산 (YOLO 입력 크기 결정용)
+    if rotation_angle in [90, 270]:
+        final_frame_w, final_frame_h = actual_frame_h, actual_frame_w
+    else:
+        final_frame_w, final_frame_h = actual_frame_w, actual_frame_h
+    
+    # YOLO 모델 입력 크기: 가로 비율로 고정 (640x384)
+    # 세로 비율이면 강제로 가로 비율로 변환
+    yolo_imgsz = 640  # YOLO 기본 입력 크기
+    if final_frame_h > final_frame_w:
+        # 세로 비율이면 가로 비율로 강제 변환
+        yolo_imgsz = (640, 384)  # (width, height) 튜플로 명시적 지정
+        print(f"📐 YOLO 입력 크기 강제 설정: {yolo_imgsz} (가로 비율)")
+    else:
+        print(f"📐 YOLO 입력 크기: {yolo_imgsz} (자동)")
 
     time = []  # 초 단위
     knees = []
@@ -546,13 +562,15 @@ def analyze_video_from_path(
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
         time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
 
-        pose_out = pose_model(frame)
+        # YOLO 모델에 명시적 입력 크기 지정 (가로 비율 강제)
+        pose_out = pose_model(frame, imgsz=yolo_imgsz)
         pose = pose_out[0]
         kp = None
         if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
             kp = pose.keypoints.xy[0].cpu().numpy()
 
-        det = det_model(frame)[0]
+        # YOLO 모델에 명시적 입력 크기 지정 (가로 비율 강제)
+        det = det_model(frame, imgsz=yolo_imgsz)[0]
         bxy = None
         if det and det.boxes is not None and len(det.boxes) > 0:
             best_conf = -1.0
@@ -890,7 +908,8 @@ def analyze_video_from_path(
         elif rotation_angle == 270:
             frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
-        pose_out = pose_model(frame)
+        # YOLO 모델에 명시적 입력 크기 지정 (가로 비율 강제)
+        pose_out = pose_model(frame, imgsz=yolo_imgsz)
         pose = pose_out[0]
         annotated = pose.plot()
         annotated = draw_panel(annotated, lines, font_path)
