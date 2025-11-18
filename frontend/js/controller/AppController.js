@@ -103,7 +103,8 @@ export class AppController {
         this.uploadView.setAnalyzeButtonEnabled(false);
         this.statusView.show(
             '⏳ 영상 분석 중입니다.',
-            '분석은 보통 1~2분 가량 소요됩니다. 절대 새로고침 하지마세요! 분석 중이던 영상 작업이 초기화됩니다.'
+            '분석은 보통 1~2분 가량 소요됩니다. ',
+            '절대 새로고침 하지마세요! 분석 중이던 영상 작업이 초기화됩니다.'
         );
         this.reportView.reset();
         this.videoView.reset();
