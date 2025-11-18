@@ -182,6 +182,8 @@ SLOW_FACTOR = 0.5
 CONF_BALL = 0.20
 SMOOTH_WIN = 5
 DEFAULT_FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+# 프레임 샘플링을 위한 최대 분석 FPS (환경변수로 조정 가능)
+MAX_PROCESSING_FPS = max(1, int(os.environ.get("MAX_PROCESSING_FPS", "15")))
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -502,12 +504,24 @@ def analyze_video_from_path(
     balls = []
     kps = []
     # Pass2에서 재사용하기 위해 포즈 결과 저장 (프레임은 메모리 절약을 위해 저장하지 않음)
-    pose_results_for_pass2 = []
+    pose_results_for_pass2 = {}
+
+    frame_idx = 0
+    frame_interval = 1
+    if fps > MAX_PROCESSING_FPS:
+        frame_interval = max(1, int(round(fps / MAX_PROCESSING_FPS)))
+        approx_fps = fps / frame_interval
+        print(f"⚡️ 프레임 샘플링 적용: {frame_interval}프레임마다 1회 분석 (약 {approx_fps:.1f} FPS)")
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
+        
+        # 프레임 샘플링: frame_interval 간격으로만 분석
+        if frame_interval > 1 and (frame_idx % frame_interval) != 0:
+            frame_idx += 1
+            continue
         
         # 회전 메타데이터가 있으면 프레임 회전
         if rotation_angle == 90:
@@ -524,8 +538,8 @@ def analyze_video_from_path(
         pose_out = pose_model(frame)
         pose = pose_out[0]
         
-        # Pass2에서 재사용하기 위해 저장 (메모리 절약: 프레임은 저장하지 않고 포즈 결과만 저장)
-        pose_results_for_pass2.append(pose)
+        # Pass2에서 재사용하기 위해 저장 (frame_idx 기준)
+        pose_results_for_pass2[frame_idx] = pose
         
         kp = None
         if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
@@ -566,6 +580,7 @@ def analyze_video_from_path(
         wrists.append(tuple(wr) if wr is not None else None)
         balls.append(bxy)
         kps.append(kp)
+        frame_idx += 1
 
     cap.release()
     time = np.asarray(time, float)
@@ -856,9 +871,10 @@ def analyze_video_from_path(
         if not out.isOpened():
             raise RuntimeError(f"VideoWriter 초기화 실패: mp4v와 XVID 모두 실패")
     
-    # Pass2: 비디오를 다시 읽어서 Pass1에서 분석한 포즈 결과 재사용 (YOLO 추론 중복 제거)
+    # Pass2: 비디오를 다시 읽어서 Pass1의 포즈 결과 재사용 (YOLO 추론 중복 제거)
     cap2 = cv2.VideoCapture(input_path)
-    pose_idx = 0
+    frame_idx = 0
+    last_pose = None
     
     while True:
         ret, frame = cap2.read()
@@ -873,20 +889,22 @@ def analyze_video_from_path(
         elif rotation_angle == 270:
             frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
-        # Pass1에서 분석한 포즈 결과 재사용 (YOLO 추론 중복 제거)
-        if pose_idx < len(pose_results_for_pass2):
-            pose = pose_results_for_pass2[pose_idx]
-            annotated = pose.plot()
-            annotated = draw_panel(annotated, lines, font_path)
-            out.write(annotated)
-            pose_idx += 1
-        else:
-            # 예외 상황: 프레임 수가 맞지 않으면 새로 분석
+        pose = pose_results_for_pass2.get(frame_idx)
+        if pose is not None:
+            last_pose = pose
+        elif last_pose is None:
+            # 첫 프레임이 샘플링에서 제외되는 경우 대비 (드물지만 안전장치)
             pose_out = pose_model(frame)
             pose = pose_out[0]
-            annotated = pose.plot()
-            annotated = draw_panel(annotated, lines, font_path)
-            out.write(annotated)
+            last_pose = pose
+        else:
+            pose = last_pose
+        
+        annotated = pose.plot()
+        annotated = draw_panel(annotated, lines, font_path)
+        out.write(annotated)
+
+        frame_idx += 1
 
     cap2.release()
     out.release()
