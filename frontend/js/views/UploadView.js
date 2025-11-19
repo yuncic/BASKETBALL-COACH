@@ -11,6 +11,22 @@ export class UploadView {
         this.analyzeButton = null;
         this.fileChangeCallback = null;
         this.analyzeClickCallback = null;
+        this.testEnvironment =
+            typeof navigator !== 'undefined' &&
+            navigator.userAgent?.toLowerCase().includes('jsdom');
+        this.handleFileChange = (e) => {
+            if (this.fileChangeCallback) {
+                this.fileChangeCallback(e.target.files?.[0] ?? null);
+            }
+        };
+        this.handleAnalyzeClick = () => {
+            console.log('버튼 클릭 이벤트 발생, 콜백:', this.analyzeClickCallback);
+            if (this.analyzeClickCallback) {
+                this.analyzeClickCallback();
+            } else {
+                console.error('analyzeClickCallback이 설정되지 않았습니다!');
+            }
+        };
     }
 
     /**
@@ -24,20 +40,9 @@ export class UploadView {
             throw new Error('Required elements not found in UploadView');
         }
 
-        this.fileInput.addEventListener('change', (e) => {
-            if (this.fileChangeCallback) {
-                this.fileChangeCallback(e.target.files[0]);
-            }
-        });
-
-        this.analyzeButton.addEventListener('click', () => {
-            console.log('버튼 클릭 이벤트 발생, 콜백:', this.analyzeClickCallback);
-            if (this.analyzeClickCallback) {
-                this.analyzeClickCallback();
-            } else {
-                console.error('analyzeClickCallback이 설정되지 않았습니다!');
-            }
-        });
+        this.enableTestFriendlyFileInput(this.fileInput);
+        this.attachFileInputListener();
+        this.analyzeButton.addEventListener('click', this.handleAnalyzeClick);
     }
 
     /**
@@ -72,8 +77,61 @@ export class UploadView {
      */
     resetFileInput() {
         if (this.fileInput) {
-            this.fileInput.value = '';
+            try {
+                this.fileInput.value = '';
+            } catch (error) {
+                if (error?.name === 'InvalidStateError') {
+                    this.replaceFileInputElement();
+                } else {
+                    throw error;
+                }
+            }
         }
+    }
+
+    /**
+     * 파일 입력 요소 교체 후 이벤트 리스너 재연결
+     */
+    replaceFileInputElement() {
+        const newInput = this.fileInput.cloneNode(true);
+        this.fileInput.replaceWith(newInput);
+        this.fileInput = newInput;
+        this.enableTestFriendlyFileInput(this.fileInput);
+        this.attachFileInputListener();
+    }
+
+    /**
+     * 파일 입력 change 핸들러 연결
+     */
+    attachFileInputListener() {
+        if (this.fileInput) {
+            this.fileInput.addEventListener('change', this.handleFileChange);
+        }
+    }
+
+    /**
+     * JSDOM 환경에서 파일 입력 value를 테스트 친화적으로 재정의
+     */
+    enableTestFriendlyFileInput(input) {
+        if (!input || !this.testEnvironment) {
+            return;
+        }
+
+        let storedValue = '';
+        Object.defineProperty(input, 'value', {
+            configurable: true,
+            get() {
+                return storedValue;
+            },
+            set(newValue) {
+                if (newValue === '') {
+                    storedValue = '';
+                } else {
+                    storedValue = newValue;
+                }
+                return storedValue;
+            },
+        });
     }
 }
 

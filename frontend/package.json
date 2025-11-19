@@ -6,9 +6,12 @@
     "test": "jest"
   },
   "devDependencies": {
+    "@jest/test-sequencer": "^29.7.0",
     "@babel/preset-env": "^7.28.5",
     "babel-jest": "^29.7.0",
-    "jest": "^29.7.0"
+    "identity-obj-proxy": "^3.0.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0"
   },
   "main": "index.js",
   "directories": {

@@ -12,7 +12,7 @@ export class ReportModel {
      * @param {Object} report - 리포트 데이터
      */
     setReport(report) {
-        if (report && !this.isValidReport(report)) {
+        if (!this.isValidReport(report)) {
             throw new Error("유효하지 않은 리포트 데이터입니다.");
         }
         this.report = report;

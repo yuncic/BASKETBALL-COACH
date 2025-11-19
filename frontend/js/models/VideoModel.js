@@ -21,6 +21,7 @@ export class VideoModel {
         this.file = file;
         this.videoURL = null;
         this.downloadLink = null;
+        this.downloadFilename = 'result.mp4';
         this.notifyListeners();
     }
 

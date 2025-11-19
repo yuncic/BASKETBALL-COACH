@@ -47,8 +47,14 @@ export class ApiService {
         const videoBlob = await response.blob();
 
         // 리포트 가져오기 (헤더에서)
-        const pathHeader = response.headers.get('X-Report-Path') || response.headers.get('x-report-path');
-        const b64Header = response.headers.get('X-Report-Base64') || response.headers.get('x-report-base64');
+        const getHeader = (name) => {
+            if (!response.headers || typeof response.headers.get !== 'function') {
+                return null;
+            }
+            return response.headers.get(name);
+        };
+        const pathHeader = getHeader('X-Report-Path') || getHeader('x-report-path');
+        const b64Header = getHeader('X-Report-Base64') || getHeader('x-report-base64');
 
         let report = null;
 
@@ -106,13 +112,48 @@ export class ApiService {
     decodeReportFromBase64(base64String) {
         try {
             // Base64 → Uint8Array → UTF-8 복원
-            const binary = atob(base64String);
+            const binary = this.decodeBase64String(base64String);
             const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
-            const text = new TextDecoder('utf-8').decode(bytes);
+            const text = this.decodeUtf8(bytes);
             const parsed = JSON.parse(text);
             return parsed;
         } catch (error) {
             throw new Error(`Base64 디코딩 실패: ${error.message}`);
+        }
+    }
+
+    /**
+     * Base64 문자열을 바이너리 문자열로 디코딩
+     */
+    decodeBase64String(base64String) {
+        if (typeof atob === 'function') {
+            return atob(base64String);
+        }
+        if (typeof Buffer !== 'undefined') {
+            return Buffer.from(base64String, 'base64').toString('binary');
+        }
+        throw new Error('Base64 디코딩을 지원하지 않는 환경입니다.');
+    }
+
+    /**
+     * Uint8Array를 UTF-8 문자열로 변환
+     */
+    decodeUtf8(bytes) {
+        if (typeof TextDecoder !== 'undefined') {
+            return new TextDecoder('utf-8').decode(bytes);
+        }
+        if (typeof Buffer !== 'undefined') {
+            return Buffer.from(bytes).toString('utf-8');
+        }
+        // 최후의 수단으로 단순 변환
+        let result = '';
+        for (let i = 0; i < bytes.length; i += 1) {
+            result += String.fromCharCode(bytes[i]);
+        }
+        try {
+            return decodeURIComponent(escape(result));
+        } catch (error) {
+            return result;
         }
     }
 }

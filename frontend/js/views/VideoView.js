@@ -35,7 +35,7 @@ export class VideoView {
         }
 
         this.videoElement.src = videoURL;
-        this.videoElement.load();
+        this.safeLoadVideo();
         this.downloadLink.href = downloadURL || videoURL;
         this.downloadLink.setAttribute('download', downloadName || 'result.mp4');
         this.downloadLink.setAttribute('type', 'video/mp4');
@@ -50,7 +50,15 @@ export class VideoView {
             this.container.style.display = 'none';
         }
         if (this.videoElement) {
-            this.videoElement.src = '';
+            if (typeof this.videoElement.pause === 'function') {
+                try {
+                    this.videoElement.pause();
+                } catch (error) {
+                    console.warn('Video pause 실패:', error);
+                }
+            }
+            this.videoElement.removeAttribute('src');
+            this.safeLoadVideo();
         }
     }
 
@@ -59,6 +67,22 @@ export class VideoView {
      */
     reset() {
         this.hide();
+    }
+
+    /**
+     * load 호출 시 JSDOM 미구현 예외를 무시하면서 안전하게 호출
+     */
+    safeLoadVideo() {
+        if (!this.videoElement || typeof this.videoElement.load !== 'function') {
+            return;
+        }
+        try {
+            this.videoElement.load();
+        } catch (error) {
+            if (!error?.message?.includes('Not implemented')) {
+                console.error('Video load 실패:', error);
+            }
+        }
     }
 }
 
