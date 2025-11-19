@@ -182,8 +182,9 @@ SLOW_FACTOR = 0.5
 CONF_BALL = 0.20
 SMOOTH_WIN = 5
 DEFAULT_FONT = "/System/Library/Fonts/AppleSDGothicNeo.ttc"
-# 프레임 샘플링을 위한 최대 분석 FPS (환경변수로 조정 가능)
+# 프레임 샘플링 및 배치 추론 설정(환경변수로 조정 가능)
 MAX_PROCESSING_FPS = max(1, int(os.environ.get("MAX_PROCESSING_FPS", "15")))
+ANALYZE_BATCH_SIZE = max(1, int(os.environ.get("ANALYZE_BATCH_SIZE", "4")))
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -513,6 +514,65 @@ def analyze_video_from_path(
         approx_fps = fps / frame_interval
         print(f"⚡️ 프레임 샘플링 적용: {frame_interval}프레임마다 1회 분석 (약 {approx_fps:.1f} FPS)")
 
+    frames_buffer = []
+    buffer_indices = []
+    buffer_times = []
+
+    def flush_batch():
+        nonlocal frames_buffer, buffer_indices, buffer_times
+        if not frames_buffer:
+            return
+
+        pose_batch = list(pose_model(frames_buffer))
+        det_batch = list(det_model(frames_buffer))
+
+        for pose_res, det_res, current_idx, current_time in zip(pose_batch, det_batch, buffer_indices, buffer_times):
+            time.append(current_time)
+            pose_results_for_pass2[current_idx] = pose_res
+
+            kp = None
+            if (pose_res.keypoints is not None) and hasattr(pose_res.keypoints, "xy") and len(pose_res.keypoints.xy) > 0:
+                kp = pose_res.keypoints.xy[0].cpu().numpy()
+
+            bxy = None
+            if det_res and det_res.boxes is not None and len(det_res.boxes) > 0:
+                best_conf = -1.0
+                for xyxy, c, conf in zip(det_res.boxes.xyxy, det_res.boxes.cls, det_res.boxes.conf):
+                    try:
+                        name = det_model.names[int(c)].lower()
+                    except:
+                        name = ""
+                    if ("ball" in name) and float(conf) >= CONF_BALL:
+                        x1, y1, x2, y2 = xyxy.cpu().numpy()
+                        if float(conf) > best_conf:
+                            best_conf = float(conf)
+                            bxy = ((x1 + x2) / 2, (y1 + y2) / 2)
+
+            if kp is None:
+                knees.append(np.nan)
+                hips.append(np.nan)
+                shoulders.append(np.nan)
+                elbows.append(np.nan)
+                wrists.append(None)
+                balls.append(bxy)
+                kps.append(None)
+                continue
+
+            an, k, h = kp[R_ANK], kp[R_KNE], kp[R_HIP]
+            sh, el, wr = kp[R_SHO], kp[R_ELB], kp[R_WRI]
+
+            knees.append(angle_abc(an, k, h))
+            hips.append(angle_abc(k, h, sh))
+            shoulders.append(angle_abc(h, sh, el))
+            elbows.append(angle_abc(sh, el, wr))
+            wrists.append(tuple(wr) if wr is not None else None)
+            balls.append(bxy)
+            kps.append(kp)
+
+        frames_buffer = []
+        buffer_indices = []
+        buffer_times = []
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -531,56 +591,23 @@ def analyze_video_from_path(
         elif rotation_angle == 270:
             frame = cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         
+        pending_offset = len(buffer_times)
         t_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
-        time.append(t_ms / 1000.0 if (t_ms and t_ms > 0) else (len(time) / fps))
+        if t_ms and t_ms > 0:
+            frame_time_value = t_ms / 1000.0
+        else:
+            frame_time_value = (len(time) + pending_offset) / fps
 
-        # YOLO 추론 (Pass1)
-        pose_out = pose_model(frame)
-        pose = pose_out[0]
-        
-        # Pass2에서 재사용하기 위해 저장 (frame_idx 기준)
-        pose_results_for_pass2[frame_idx] = pose
-        
-        kp = None
-        if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
-            kp = pose.keypoints.xy[0].cpu().numpy()
+        frames_buffer.append(frame)
+        buffer_indices.append(frame_idx)
+        buffer_times.append(frame_time_value)
 
-        det = det_model(frame)[0]
-        bxy = None
-        if det and det.boxes is not None and len(det.boxes) > 0:
-            best_conf = -1.0
-            for xyxy, c, conf in zip(det.boxes.xyxy, det.boxes.cls, det.boxes.conf):
-                try:
-                    name = det_model.names[int(c)].lower()
-                except:
-                    name = ""
-                if ("ball" in name) and float(conf) >= CONF_BALL:
-                    x1, y1, x2, y2 = xyxy.cpu().numpy()
-                    if float(conf) > best_conf:
-                        best_conf = float(conf)
-                        bxy = ((x1 + x2) / 2, (y1 + y2) / 2)
+        if len(frames_buffer) >= ANALYZE_BATCH_SIZE:
+            flush_batch()
 
-        if kp is None:
-            knees.append(np.nan)
-            hips.append(np.nan)
-            shoulders.append(np.nan)
-            elbows.append(np.nan)
-            wrists.append(None)
-            balls.append(bxy)
-            kps.append(None)
-            continue
-
-        an, k, h = kp[R_ANK], kp[R_KNE], kp[R_HIP]
-        sh, el, wr = kp[R_SHO], kp[R_ELB], kp[R_WRI]
-
-        knees.append(angle_abc(an, k, h))  # 무릎 폄 증가
-        hips.append(angle_abc(k, h, sh))  # 허리 폄 근사
-        shoulders.append(angle_abc(h, sh, el))  # 어깨 굴곡 근사
-        elbows.append(angle_abc(sh, el, wr))  # 팔꿈치 폄 증가
-        wrists.append(tuple(wr) if wr is not None else None)
-        balls.append(bxy)
-        kps.append(kp)
         frame_idx += 1
+
+    flush_batch()
 
     cap.release()
     time = np.asarray(time, float)

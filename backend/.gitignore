@@ -1,2 +1,4 @@
 *.pt
 *frontend/node_modules/
+*.npm-cache
+*backend/start.sh
