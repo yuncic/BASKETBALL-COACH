@@ -1,0 +1,160 @@
+
+export class ApiService {
+    constructor(baseURL = '') {
+        this.baseURL = baseURL;
+    }
+
+    /**
+     * 비디오 분석 요청
+     * @param {File} file - 업로드할 비디오 파일
+     * @returns {Promise<{videoBlob: Blob, report: Object}>} 분석 결과 비디오와 리포트
+     */
+    async analyzeVideo(file) {
+        if (!file) {
+            throw new Error('분석할 영상을 업로드해주세요!');
+        }
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        const response = await fetch(`${this.baseURL}/api/analyze`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (!response.ok) {
+            // 서버에서 반환한 에러 메시지 파싱 시도
+            let errorMessage = `분석 실패: ${response.status}`;
+            try {
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    const errorData = await response.json();
+                    errorMessage = errorData.error || errorData.message || errorMessage;
+                } else {
+                    const errorText = await response.text();
+                    if (errorText) {
+                        errorMessage = errorText;
+                    }
+                }
+            } catch (e) {
+                // JSON 파싱 실패 시 기본 메시지 사용
+                console.warn('에러 응답 파싱 실패:', e);
+            }
+            throw new Error(errorMessage);
+        }
+
+        // 비디오 Blob 받기
+        const videoBlob = await response.blob();
+
+        // 리포트 가져오기 (헤더에서)
+        const getHeader = (name) => {
+            if (!response.headers || typeof response.headers.get !== 'function') {
+                return null;
+            }
+            return response.headers.get(name);
+        };
+        const pathHeader = getHeader('X-Report-Path') || getHeader('x-report-path');
+        const b64Header = getHeader('X-Report-Base64') || getHeader('x-report-base64');
+
+        let report = null;
+
+        // 방법 1: 경로로 리포트 가져오기
+        if (pathHeader) {
+            try {
+                report = await this.getReportByPath(pathHeader);
+            } catch (error) {
+                console.warn('Failed to fetch report by path:', error);
+            }
+        }
+
+        // 방법 2: Base64로 리포트 복원
+        if (!report && b64Header) {
+            try {
+                report = this.decodeReportFromBase64(b64Header);
+            } catch (error) {
+                console.warn('Failed to decode report from base64:', error);
+            }
+        }
+
+        if (!report) {
+            throw new Error('리포트를 가져올 수 없습니다.');
+        }
+
+        return {
+            videoBlob,
+            report,
+        };
+    }
+
+    /**
+     * 경로로 리포트 가져오기
+     * @param {string} path - 리포트 파일 경로
+     * @returns {Promise<Object>} 리포트 데이터
+     */
+    async getReportByPath(path) {
+        const encodedPath = encodeURIComponent(path);
+        const response = await fetch(`${this.baseURL}/api/report?path=${encodedPath}`);
+
+        if (!response.ok) {
+            throw new Error(`리포트 가져오기 실패: ${response.status}`);
+        }
+
+        const text = await response.text();
+        const data = JSON.parse(text);
+        return data;
+    }
+
+    /**
+     * Base64 문자열에서 리포트 디코딩
+     * @param {string} base64String - Base64로 인코딩된 리포트
+     * @returns {Object} 리포트 데이터
+     */
+    decodeReportFromBase64(base64String) {
+        try {
+            // Base64 → Uint8Array → UTF-8 복원
+            const binary = this.decodeBase64String(base64String);
+            const bytes = Uint8Array.from(binary, c => c.charCodeAt(0));
+            const text = this.decodeUtf8(bytes);
+            const parsed = JSON.parse(text);
+            return parsed;
+        } catch (error) {
+            throw new Error(`Base64 디코딩 실패: ${error.message}`);
+        }
+    }
+
+    /**
+     * Base64 문자열을 바이너리 문자열로 디코딩
+     */
+    decodeBase64String(base64String) {
+        if (typeof atob === 'function') {
+            return atob(base64String);
+        }
+        if (typeof Buffer !== 'undefined') {
+            return Buffer.from(base64String, 'base64').toString('binary');
+        }
+        throw new Error('Base64 디코딩을 지원하지 않는 환경입니다.');
+    }
+
+    /**
+     * Uint8Array를 UTF-8 문자열로 변환
+     */
+    decodeUtf8(bytes) {
+        if (typeof TextDecoder !== 'undefined') {
+            return new TextDecoder('utf-8').decode(bytes);
+        }
+        if (typeof Buffer !== 'undefined') {
+            return Buffer.from(bytes).toString('utf-8');
+        }
+        // 최후의 수단으로 단순 변환
+        let result = '';
+        for (let i = 0; i < bytes.length; i += 1) {
+            result += String.fromCharCode(bytes[i]);
+        }
+        try {
+            return decodeURIComponent(escape(result));
+        } catch (error) {
+            return result;
+        }
+    }
+}
+
