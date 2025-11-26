@@ -40,6 +40,7 @@ export class ReportView {
         const metrics = report.metrics || {};
         const suggestions = report.suggestions || [];
         const powerTransfer = report.power_transfer ?? 0;
+        const releaseAngle = report.release_angle ?? 0;
         
         let html = `
             <p>효율 점수: ${effScore}%</p>
@@ -47,6 +48,7 @@ export class ReportView {
             <p>어깨→팔꿈치: ${metrics.shoulder_elbow?.gap ?? '-'} (${metrics.shoulder_elbow?.verdict ?? '-'})</p>
             <p>릴리즈 타이밍: ${metrics.release_timing?.gap ?? '-'} (${metrics.release_timing?.verdict ?? '-'})</p>
             <p>힘 전달 효율: ${powerTransfer}%</p>
+            <p>발사각: ${releaseAngle}°</p>
         `;
 
         if (suggestions.length > 0) {

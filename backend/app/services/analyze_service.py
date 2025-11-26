@@ -707,6 +707,20 @@ def analyze_video_from_path(
     # 힘 전달 효율 점수
     power_transfer = np.nanmean([align_knee_hip, align_hip_shoulder, align_shoulder_elbow])
     
+    # ---------- 발사각 계산 (릴리즈 시점의 어깨 각도 = 겨드랑이 각도) ----------
+    # 허리-어깨-팔꿈치 사이의 각도 (어깨 관절 각도)
+    kp_rel = kps[release_idx] if (0 <= release_idx < len(kps)) else None
+    if kp_rel is None and len(kps) > 0:
+        kp_rel = kps[max(0, release_idx - 1)]
+    
+    rel_ang = np.nan
+    if kp_rel is not None:
+        try:
+            # 어깨 각도 = angle_abc(허리, 어깨, 팔꿈치)
+            rel_ang = angle_abc(kp_rel[R_HIP], kp_rel[R_SHO], kp_rel[R_ELB])
+        except:
+            rel_ang = np.nan
+    
     # 최종 효율 점수 (타이밍 70% + 힘 전달 30%)
     timing_mean = np.nanmean([score_k, score_s, score_a])
     eff_score = clamp01_100(0.7 * timing_mean + 0.3 * power_transfer)
@@ -718,6 +732,7 @@ def analyze_video_from_path(
         f"어깨→팔꿈치: {fmt_sec(G_sa)} ({verdict_shoulder_elbow(G_sa)})",
         f"릴리즈 타이밍: {fmt_sec(G_ar)} ({verdict_release(G_ar)})",
         f"힘 전달 효율: {power_transfer:.1f}%",
+        f"발사각: {rel_ang:.1f}°",
     ]
 
     # ---------- Pass2 렌더링 ----------
@@ -857,6 +872,7 @@ def analyze_video_from_path(
             },
         },
         "power_transfer": round(float(power_transfer), 1) if np.isfinite(power_transfer) else 0.0,
+        "release_angle": round(float(rel_ang), 1) if np.isfinite(rel_ang) else 0.0,
         "suggestions": [],
     }
 
