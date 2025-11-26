@@ -189,7 +189,7 @@ MAX_PROCESSING_FPS = max(1, int(os.environ.get("MAX_PROCESSING_FPS", "15")))
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 MODEL_DIR = BASE_DIR
 POSE_MODEL_PATH = MODEL_DIR / "yolov8n-pose.pt"
-DET_MODEL_PATH = MODEL_DIR / "yolov8x.pt"  # 예전 코드와 동일: yolov8x 사용
+# detection 모델 불필요 (관절 각도만으로 분석)
 
 def ensure_font(path):
     """폰트 경로를 확인하고, 실패 시 기본 폰트 반환"""
@@ -318,11 +318,10 @@ def unit_vec(v):
     return v / n if n > 1e-8 else np.zeros_like(v)
 
 _pose_model = None
-_det_model = None
 
 def _get_models():
     """모델을 지연 로드 (첫 호출 시 로드)"""
-    global _pose_model, _det_model
+    global _pose_model
     
     # 모델 로드 전에 safe_globals가 확실히 설정되었는지 확인
     try:
@@ -399,55 +398,7 @@ def _get_models():
                 param.requires_grad = False
         gc.collect()
     
-    if _det_model is None:
-        # detection 모델 로드 직전에 모든 ultralytics 클래스를 확실히 추가
-        try:
-            import torch
-            if hasattr(torch.serialization, 'add_safe_globals'):
-                # Conv 클래스를 여러 경로에서 찾아서 추가
-                conv_classes = []
-                try:
-                    from ultralytics.nn.modules.conv import Conv
-                    conv_classes.append(Conv)
-                except:
-                    pass
-                try:
-                    import ultralytics.nn.modules as ultralytics_modules
-                    # 패키지 레벨에 Conv가 있는지 확인
-                    if hasattr(ultralytics_modules, 'Conv'):
-                        conv_classes.append(ultralytics_modules.Conv)
-                    # 없으면 conv 모듈에서 가져와서 추가
-                    else:
-                        try:
-                            from ultralytics.nn.modules.conv import Conv as ConvClass
-                            setattr(ultralytics_modules, 'Conv', ConvClass)
-                            conv_classes.append(ConvClass)
-                        except:
-                            pass
-                except:
-                    pass
-                
-                # 모든 Conv 클래스를 추가
-                if conv_classes:
-                    torch.serialization.add_safe_globals(conv_classes)
-                    print(f"✅ Conv 클래스 {len(conv_classes)}개 추가됨")
-                
-                # Concat도 추가
-                try:
-                    from ultralytics.nn.modules.block import Concat
-                    torch.serialization.add_safe_globals([Concat])
-                except:
-                    pass
-        except Exception as e:
-            print(f"⚠️ safe_globals 추가 실패: {e}")
-        _det_model = YOLO(str(DET_MODEL_PATH))
-        # 메모리 최적화: 모델을 eval 모드로 설정하고 gradient 비활성화
-        if hasattr(_det_model, 'model'):
-            _det_model.model.eval()
-            for param in _det_model.model.parameters():
-                param.requires_grad = False
-        gc.collect()
-    return _pose_model, _det_model
+    return _pose_model
 
 # COCO right side indices
 R_SHO, R_ELB, R_WRI, R_HIP, R_KNE, R_ANK = 6, 8, 10, 12, 14, 16
@@ -468,7 +419,7 @@ def analyze_video_from_path(
 
     반환: report(dict) - 웹에서 오른쪽 패널에 텍스트로 표시
     """
-    pose_model, det_model = _get_models()
+    pose_model = _get_models()
 
     # ---------- Pass1: 포즈 & 공 궤적 ----------
     cap = cv2.VideoCapture(input_path)
@@ -501,7 +452,6 @@ def analyze_video_from_path(
     shoulders = []
     elbows = []
     wrists = []
-    balls = []
     kps = []
     # Pass2에서 재사용하기 위해 포즈 결과 저장 (프레임은 메모리 절약을 위해 저장하지 않음)
     pose_results_for_pass2 = {}
@@ -545,29 +495,14 @@ def analyze_video_from_path(
         if (pose.keypoints is not None) and hasattr(pose.keypoints, "xy") and len(pose.keypoints.xy) > 0:
             kp = pose.keypoints.xy[0].cpu().numpy()
 
-        det = det_model(frame)[0]
-        bxy = None
-        if det and det.boxes is not None and len(det.boxes) > 0:
-            best_conf = -1.0
-            for xyxy, c, conf in zip(det.boxes.xyxy, det.boxes.cls, det.boxes.conf):
-                try:
-                    name = det_model.names[int(c)].lower()
-                except:
-                    name = ""
-                if ("ball" in name) and float(conf) >= CONF_BALL:
-                    x1, y1, x2, y2 = xyxy.cpu().numpy()
-                    if float(conf) > best_conf:
-                        best_conf = float(conf)
-                        bxy = ((x1 + x2) / 2, (y1 + y2) / 2)
-
         if kp is None:
             knees.append(np.nan)
             hips.append(np.nan)
             shoulders.append(np.nan)
             elbows.append(np.nan)
             wrists.append(None)
-            balls.append(bxy)
             kps.append(None)
+            frame_idx += 1
             continue
 
         an, k, h = kp[R_ANK], kp[R_KNE], kp[R_HIP]
@@ -578,7 +513,6 @@ def analyze_video_from_path(
         shoulders.append(angle_abc(h, sh, el))  # 어깨 굴곡 근사
         elbows.append(angle_abc(sh, el, wr))  # 팔꿈치 폄 증가
         wrists.append(tuple(wr) if wr is not None else None)
-        balls.append(bxy)
         kps.append(kp)
         frame_idx += 1
 
@@ -596,28 +530,18 @@ def analyze_video_from_path(
     sho_v = derivative(shoulders_s, time)
     elb_v = derivative(elbows_s, time)
 
-    # ---------- 릴리즈 검출 (손목 제외 / 공 궤도 기반) ----------
-    ball_y = np.array([b[1] if b is not None else np.nan for b in balls], dtype=float)
-    ball_y_s = smooth(ball_y)
-    v_ball_y = derivative(ball_y_s, time)
-
+    # ---------- 릴리즈 검출 (어깨-팔꿈치 최대 각속도 시점) ----------
+    # 어깨-팔꿈치가 가장 빠르게 펴지는 순간 = 릴리즈
     release_idx = None
-    for i in range(1, nT):
-        if (balls[i - 1] is not None) and (balls[i] is None):
-            release_idx = i
-            break
-
-    if release_idx is None:
-        signs = np.sign(v_ball_y)
-        change_pts = np.where(np.diff(signs) > 0)[0]
-        if len(change_pts) > 0:
-            release_idx = int(change_pts[0] + 1)
-
-    if release_idx is None:
-        dist_speed = np.gradient(np.abs(v_ball_y))
-        if np.nanmax(dist_speed) > np.nanmean(dist_speed) * 3:
-            release_idx = int(np.nanargmax(dist_speed))
-
+    if np.isfinite(sho_v).any():
+        # 어깨 각속도가 최대인 시점 찾기
+        valid_mask = np.isfinite(sho_v) & (sho_v > 0)  # 양수만 (펴지는 방향)
+        if np.sum(valid_mask) > 0:
+            valid_indices = np.where(valid_mask)[0]
+            valid_velocities = sho_v[valid_mask]
+            max_vel_idx_in_valid = np.argmax(valid_velocities)
+            release_idx = int(valid_indices[max_vel_idx_in_valid])
+    
     if release_idx is None:
         release_idx = int(nT * 0.7) if nT > 0 else 0
 
@@ -747,100 +671,45 @@ def analyze_video_from_path(
     score_s = band_score(G_sa, TARGET["G_sa"], TOL["G_sa"])
     score_a = band_score(G_ar, TARGET["G_ar"], TOL["G_ar"])
 
-    # ---------- 벡터 정렬 (팔·공, COM·공) ----------
-    def regress_velocity(points, t, idx_center, pre=6, post=0):
-        """idx_center 이전 구간을 이용한 최소자승 속도 추정(공/COM 공통)."""
-        idxs = [i for i in range(idx_center - pre, idx_center + post + 1)
-                if 0 <= i < len(points) and points[i] is not None]
-        shrink = pre
-        while len(idxs) < 2 and shrink > 1:  # 예전 코드와 동일: 최소 2개부터 시작
-            shrink //= 2
-            idxs = [i for i in range(idx_center - shrink, idx_center + 1)
-                    if 0 <= i < len(points) and points[i] is not None]
-        if len(idxs) < 2:  # 예전 코드와 동일: 2개 미만이면 None
-            return None
-        xs = np.array([points[i][0] for i in idxs], dtype=float)
-        ys = np.array([points[i][1] for i in idxs], dtype=float)
-        ts = np.array([t[i] for i in idxs], dtype=float)
-        if len(idxs) < 3:  # 예전 코드와 동일: 3개 미만이면 None
-            return None
-        valid = np.isfinite(xs) & np.isfinite(ys) & np.isfinite(ts)
-        if np.sum(valid) < 3:
-            return None
-        xs, ys, ts = xs[valid], ys[valid], ts[valid]
-        A = np.vstack([ts, np.ones_like(ts)]).T
-        ax, _ = np.linalg.lstsq(A, xs, rcond=None)[0]
-        ay, _ = np.linalg.lstsq(A, ys, rcond=None)[0]
-        return np.array([ax, ay], dtype=float)
-
-    def alignment_score(v1, v2):
-        """코사인 유사도 기반 정렬도. 음수(반대방향)는 0 처리."""
-        if v1 is None or v2 is None:
+    # ---------- 힘 전달 효율성 (관절 벡터 정렬도) ----------
+    def joint_vector_alignment(kps_list, idx, j1, j2, j3, j4):
+        """두 관절 벡터의 정렬도 계산"""
+        if idx < 0 or idx >= len(kps_list) or kps_list[idx] is None:
             return np.nan
-        v1 = unit_vec(v1)
-        v2 = unit_vec(v2)
-        cosv = np.clip(np.dot(v1, v2), -1.0, 1.0)
-        return clamp01_100(100.0 * max(0.0, cosv))
-
-    ball_series = balls.copy()
-    v_ball_img = regress_velocity(ball_series, time, release_idx, pre=6, post=0)
-    v_ball = None if v_ball_img is None else np.array([v_ball_img[0], -v_ball_img[1]], dtype=float)
-
-    kp_rel = kps[release_idx] if (0 <= release_idx < len(kps)) else None
-    if kp_rel is None and len(kps) > 0:
-        kp_rel = kps[max(0, release_idx - 1)]
-
-    v_arm = None
-    if kp_rel is not None:
+        kp = kps_list[idx]
         try:
-            sh = kp_rel[R_SHO]
-            wr = kp_rel[R_WRI]
-            v_arm = np.array([wr[0] - sh[0], -(wr[1] - sh[1])], dtype=float)
+            # 첫 번째 벡터 (j1 -> j2)
+            v1 = np.array([kp[j2][0] - kp[j1][0], kp[j2][1] - kp[j1][1]], dtype=float)
+            # 두 번째 벡터 (j3 -> j4)
+            v2 = np.array([kp[j4][0] - kp[j3][0], kp[j4][1] - kp[j3][1]], dtype=float)
+            
+            # 정규화
+            v1_norm = np.linalg.norm(v1)
+            v2_norm = np.linalg.norm(v2)
+            if v1_norm < 1e-6 or v2_norm < 1e-6:
+                return np.nan
+            
+            v1 = v1 / v1_norm
+            v2 = v2 / v2_norm
+            
+            # 코사인 유사도
+            cosv = np.clip(np.dot(v1, v2), -1.0, 1.0)
+            return clamp01_100(100.0 * max(0.0, cosv))
         except:
-            v_arm = None
-
-    def com_points_from_kps(kps_list):
-        pts = []
-        for kp in kps_list:
-            if kp is None:
-                pts.append(None)
-            else:
-                try:
-                    hip = kp[R_HIP]
-                    sho = kp[R_SHO]
-                    com = ((hip[0] + sho[0]) / 2.0, (hip[1] + sho[1]) / 2.0)
-                    pts.append(com)
-                except:
-                    pts.append(None)
-        return pts
-
-    com_series = com_points_from_kps(kps)
-    v_com_img = regress_velocity(com_series, time, release_idx, pre=6, post=0)
-    v_com = None if v_com_img is None else np.array([v_com_img[0], -v_com_img[1]], dtype=float)
-
-    score_arm = alignment_score(v_arm, v_ball)
-    score_com = alignment_score(v_com, v_ball)
-
-    def release_angle_horizontal(sh, wr):
-        if (sh is None) or (wr is None):
             return np.nan
-        dx = wr[0] - sh[0]
-        dy_up = -(wr[1] - sh[1])
-        ang = math.degrees(math.atan2(abs(dy_up), abs(dx)))
-        if not np.isfinite(ang):
-            return np.nan
-        return float(max(0.0, min(90.0, ang)))
-
-    rel_ang = np.nan
-    if kp_rel is not None:
-        try:
-            rel_ang = release_angle_horizontal(kp_rel[R_SHO], kp_rel[R_WRI])
-        except:
-            rel_ang = np.nan
-
+    
+    # 릴리즈 시점의 힘 전달 효율성
+    # 무릎-허리, 허리-어깨, 어깨-팔꿈치 벡터 정렬도
+    align_knee_hip = joint_vector_alignment(kps, release_idx, R_ANK, R_KNE, R_KNE, R_HIP)
+    align_hip_shoulder = joint_vector_alignment(kps, release_idx, R_KNE, R_HIP, R_HIP, R_SHO)
+    align_shoulder_elbow = joint_vector_alignment(kps, release_idx, R_HIP, R_SHO, R_SHO, R_ELB)
+    
+    # 힘 전달 효율 점수
+    power_transfer = np.nanmean([align_knee_hip, align_hip_shoulder, align_shoulder_elbow])
+    
+    # 최종 효율 점수 (타이밍 70% + 힘 전달 30%)
     timing_mean = np.nanmean([score_k, score_s, score_a])
-    align_mean = np.nanmean([score_arm, score_com])
-    eff_score = clamp01_100(0.5 * timing_mean + 0.5 * align_mean)
+    eff_score = clamp01_100(0.7 * timing_mean + 0.3 * power_transfer)
 
     # ---------- 패널 텍스트 ----------
     lines = [
@@ -848,9 +717,7 @@ def analyze_video_from_path(
         f"무릎↔허리 동기화: {fmt_sec(G_ke)} ({verdict_sync_ke(G_ke)})",
         f"어깨→팔꿈치: {fmt_sec(G_sa)} ({verdict_shoulder_elbow(G_sa)})",
         f"릴리즈 타이밍: {fmt_sec(G_ar)} ({verdict_release(G_ar)})",
-        f"팔과 공의 방향 정렬도: {0.0 if not np.isfinite(score_arm) else score_arm:.1f}점",
-        f"질량중심과 공의 방향 정렬도: {0.0 if not np.isfinite(score_com) else score_com:.1f}점",
-        f"발사각: {rel_ang:.1f}°",
+        f"힘 전달 효율: {power_transfer:.1f}%",
     ]
 
     # ---------- Pass2 렌더링 ----------
@@ -989,27 +856,26 @@ def analyze_video_from_path(
                 "verdict": verdict_release(G_ar),
             },
         },
-        "alignment": {
-            "arm_ball": 0.0 if not np.isfinite(score_arm) else round(float(score_arm), 1),
-            "com_ball": 0.0 if not np.isfinite(score_com) else round(float(score_com), 1),
-            "release_angle": 0.0 if not np.isfinite(rel_ang) else round(float(rel_ang), 1),
-        },
+        "power_transfer": round(float(power_transfer), 1) if np.isfinite(power_transfer) else 0.0,
         "suggestions": [],
     }
 
-    # 간단 피드백(원본 흐름 유지)
+    # 힘 전달 효율성 기반 피드백
+    
+    if power_transfer < 80:
+        report["suggestions"].append("힘 전달이 양호하지만, 하체부터 팔끝까지 더 매끄럽게 이어지도록 연습하세요.")
+    
     if eff_score < 60:
-        report["suggestions"].append("하체 리듬과 릴리즈 타이밍의 일관성을 높이면 슛 효율이 향상됩니다.")
+        report["suggestions"].append("타이밍과 힘 전달을 모두 개선해야 합니다. 기본 슈팅 폼부터 다시 점검하세요.")
     elif eff_score < 80:
-        report["suggestions"].append("팔꿈치와 손목의 타이밍을 조정해 릴리즈를 더 부드럽게 만들어보세요.")
+        report["suggestions"].append("슈팅 효율이 양호합니다. 무릎-허리-어깨-팔꿈치의 순차적 타이밍을 더 정교하게 조절하세요.")
     else:
-        report["suggestions"].append("좋은 폼입니다! 릴리즈 타이밍만 유지하면 안정적인 슛이 가능합니다.")
+        report["suggestions"].append("훌륭한 슈팅 폼입니다! 이 리듬을 꾸준히 유지하세요.")
 
-    rv = report["metrics"]["release_timing"]["verdict"]
-    if rv == "느림":
-        report["suggestions"].append("릴리즈가 느립니다. 하체 힘 전달 직후 릴리즈 타이밍을 앞당겨보세요.")
-    elif rv == "빠름":
-        report["suggestions"].append("릴리즈가 빠릅니다. 하체-상체 순차 힘 전달 후에 릴리즈하세요.")
+    # 동기화 피드백
+    kh_verdict = report["metrics"]["knee_hip"]["verdict"]
+    if kh_verdict in ["불량", "심각 불일치"]:
+        report["suggestions"].append("무릎과 허리가 동시에 움직여야 합니다. 하체 힘을 한 번에 폭발시키세요.")
 
     return report
     

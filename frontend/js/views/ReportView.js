@@ -38,17 +38,15 @@ export class ReportView {
     renderReport(report) {
         const effScore = report.eff_score?.toFixed?.(1) ?? 'N/A';
         const metrics = report.metrics || {};
-        const alignment = report.alignment || {};
         const suggestions = report.suggestions || [];
-
+        const powerTransfer = report.power_transfer ?? 0;
+        
         let html = `
             <p>효율 점수: ${effScore}%</p>
             <p>무릎↔허리: ${metrics.knee_hip?.gap ?? '-'} (${metrics.knee_hip?.verdict ?? '-'})</p>
             <p>어깨→팔꿈치: ${metrics.shoulder_elbow?.gap ?? '-'} (${metrics.shoulder_elbow?.verdict ?? '-'})</p>
             <p>릴리즈 타이밍: ${metrics.release_timing?.gap ?? '-'} (${metrics.release_timing?.verdict ?? '-'})</p>
-            <p>팔-공 정렬도: ${alignment.arm_ball ?? 0}점</p>
-            <p>무게중심-공 정렬도: ${alignment.com_ball ?? 0}점</p>
-            <p>발사각: ${alignment.release_angle ?? 0}°</p>
+            <p>힘 전달 효율: ${powerTransfer}%</p>
         `;
 
         if (suggestions.length > 0) {

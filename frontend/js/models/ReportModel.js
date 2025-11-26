@@ -40,7 +40,6 @@ export class ReportModel {
         return (
             typeof report.eff_score === 'number' &&
             report.metrics &&
-            report.alignment &&
             Array.isArray(report.suggestions)
         );
     }
@@ -70,11 +69,11 @@ export class ReportModel {
     }
 
     /**
-     * 정렬도 데이터 가져오기
-     * @returns {Object|null} 정렬도 데이터
+     * 힘 전달 효율 가져오기
+     * @returns {number|null} 힘 전달 효율
      */
-    getAlignment() {
-        return this.report?.alignment ?? null;
+    getPowerTransfer() {
+        return this.report?.power_transfer ?? null;
     }
 
     /**

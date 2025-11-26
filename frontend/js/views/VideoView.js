@@ -34,12 +34,37 @@ export class VideoView {
             return;
         }
 
+        console.log('🎬 VideoView.showVideo 호출됨:', {
+            videoURL: videoURL.substring(0, 50) + '...',
+            downloadURL: downloadURL ? downloadURL.substring(0, 50) + '...' : 'none',
+            downloadName
+        });
+
         this.videoElement.src = videoURL;
         this.safeLoadVideo();
         this.downloadLink.href = downloadURL || videoURL;
         this.downloadLink.setAttribute('download', downloadName || 'result.mp4');
         this.downloadLink.setAttribute('type', 'video/mp4');
         this.container.style.display = 'flex';
+        
+        console.log('✅ 비디오 요소 설정 완료:', {
+            src: this.videoElement.src.substring(0, 50) + '...',
+            containerDisplay: this.container.style.display
+        });
+        
+        // 비디오 로드 이벤트 리스너
+        this.videoElement.addEventListener('loadeddata', () => {
+            console.log('✅ 비디오 로드 완료');
+        }, { once: true });
+        
+        this.videoElement.addEventListener('error', (e) => {
+            console.error('❌ 비디오 로드 에러:', {
+                error: this.videoElement.error,
+                errorCode: this.videoElement.error?.code,
+                errorMessage: this.videoElement.error?.message,
+                src: this.videoElement.src
+            });
+        }, { once: true });
     }
 
     /**
